@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cardiac Monitor - ECG Visualization</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <style>
+    :root {
+      --primary: #ff3838;
+      --primary-dark: #e02c39;
+      --secondary: #0f172a;
+      --text: #f1f5f9;
+      --background: #020617;
+      --panel-bg: #1e293b;
+      --graph-bg: #000000;
+      --overlay-bg: rgba(15, 23, 42, 0.8);
+      --success: #2ed573;
+    }
+
+    [data-theme="light"] {
+      --primary: #ff3838;
+      --primary-dark: #e02c39;
+      --secondary: #e2e8f0;
+      --text: #0f172a;
+      --background: #ffffff;
+      --panel-bg: #e9ecef;
+      --graph-bg: #ffffff;
+      --overlay-bg: rgba(255, 255, 255, 0.8);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background-color: var(--background);
+      color: var(--text);
+      margin: 0;
+      padding: 20px;
+      transition: all 0.3s ease;
+    }
+
+    h1 {
+      margin: 10px 0 20px;
+      color: var(--primary);
+      font-weight: 600;
+      font-size: clamp(1.5rem, 6vw, 2rem);
+      text-align: center;
+    }
+
+    .app-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .controls {
+      margin-bottom: 15px;
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn {
+      background-color: var(--secondary);
+      border: none;
+      color: var(--text);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 15px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 650;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      min-width: 100px;
+      touch-action: manipulation;
+    }
+
+    .btn:hover:not(:disabled) {
+      background-color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      height: 400px;
+      margin: 0 auto 20px;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      background: var(--graph-bg);
+      transition: all 0.3s ease;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      background: var(--graph-bg);
+    }
+
+    .canvas-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      padding: 15px;
+      box-sizing: border-box;
+    }
+
+    /* Overlay containers for top metrics */
+    .overlay-top {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      right: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .overlay-bpm {
+      background-color: var(--overlay-bg);
+      padding: 10px 20px;
+      border-radius: 25px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      backdrop-filter: blur(5px);
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      top: 15px;
+    }
+
+    .overlay-metric {
+      background-color: var(--overlay-bg);
+      padding: 8px 15px;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      backdrop-filter: blur(5px);
+    }
+
+    .overlay-signal {
+      /* Positioned in the top left */
+    }
+
+    .overlay-time {
+      /* Positioned in the top right */
+    }
+
+    .heart-icon {
+      width: 22px;
+      height: 22px;
+      background-color: var(--primary);
+      transform: rotate(45deg);
+      position: relative;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .heart-icon.beating {
+      opacity: 1;
+      animation: none;
+    }
+
+    .heart-icon:before,
+    .heart-icon:after {
+      content: "";
+      width: 22px;
+      height: 22px;
+      background-color: var(--primary);
+      border-radius: 50%;
+      position: absolute;
+    }
+
+    .heart-icon:before {
+      top: -11px;
+      left: 0;
+    }
+
+    .heart-icon:after {
+      top: 0;
+      left: -11px;
+    }
+
+    .fullscreen-btn {
+      position: absolute;
+      bottom: 15px;
+      right: 15px;
+      background-color: var(--overlay-bg);
+      border: none;
+      color: var(--text);
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      pointer-events: auto;
+      z-index: 10;
+      opacity: 0.8;
+      transition: all 0.2s;
+      backdrop-filter: blur(5px);
+    }
+
+    .fullscreen-btn:hover {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .fullscreen-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    .device-panel {
+      border: none;
+      padding: 20px;
+      margin-bottom: 30px;
+      border-radius: 12px;
+      background-color: var(--panel-bg);
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s;
+    }
+
+    .device-panel:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .theme-toggle {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background-color: var(--secondary);
+      color: var(--text);
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      z-index: 100;
+      transition: all 0.3s;
+    }
+
+    .theme-toggle:hover {
+      transform: scale(1.1);
+    }
+
+    .theme-toggle svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .fullscreen {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--background);
+      z-index: 1000;
+      padding: 0;
+      margin: 0;
+      border-radius: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .fullscreen .canvas-container {
+      height: calc(100vh - 80px);
+      margin: 0;
+    }
+
+    .fullscreen .controls {
+      margin: 20px;
+    }
+
+    @keyframes pulse {
+      0% { transform: rotate(45deg) scale(0.8); }
+      15% { transform: rotate(45deg) scale(1.1); }
+      30% { transform: rotate(45deg) scale(0.9); }
+      45% { transform: rotate(45deg) scale(1.05); }
+      60% { transform: rotate(45deg) scale(0.95); }
+      100% { transform: rotate(45deg) scale(0.8); }
+    }
+
+    @media (max-width: 768px) {
+      .canvas-container {
+        height: 250px;
+      }
+
+      body {
+        padding: 15px;
+      }
+
+      .device-panel {
+        padding: 15px;
+      }
+
+      .btn {
+        padding: 8px 14px;
+        min-width: 80px;
+      }
+
+      .overlay-bpm {
+        font-size: 1.3rem;
+        padding: 8px 16px;
+      }
+
+      .overlay-metric {
+        font-size: 0.8rem;
+        padding: 6px 12px;
+      }
+
+      .heart-icon {
+        width: 18px;
+        height: 18px;
+      }
+
+      .heart-icon:before,
+      .heart-icon:after {
+        width: 18px;
+        height: 18px;
+      }
+
+      .heart-icon:before {
+        top: -9px;
+      }
+
+      .heart-icon:after {
+        left: -9px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .canvas-container {
+        height: 200px;
+      }
+      /* Display control buttons in a two-column grid */
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+      .btn {
+        margin: 0;
+        padding: 7px 12px;
+        font-size: 13px;
+        min-width: 0;
+      }
+      /* Reposition BPM display to the bottom to avoid overlapping small top metrics */
+      .overlay-bpm {
+        top: auto;
+        bottom: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <h1>Cardiac Monitor</h1>
+    <div id="deviceContainer"></div>
+  </div>
+
+  <button class="theme-toggle" aria-label="Toggle theme">
+    <svg viewBox="0 0 24 24">
+      <path d="M12 18c-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6-2.7 6-6 6zm0-10c-2.2 0-4 1.8-4 4s1.8 4 4 4 4-1.8 4-4-1.8-4-4-4zm-7-2c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm14 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zM12 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm0 22c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm-9-9c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm18 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zM5.6 4.6c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm12.8 12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm0-12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm-12.8 12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0z"/>
+    </svg>
+  </button>
+
+  <script type="module">
+    import { WebglPlot, ColorRGBA, WebglLine } from "https://cdn.skypack.dev/webgl-plot";
+
+    // === Filter Classes ===
+    class NotchFilter {
+      constructor() {
+        this.z1_1 = 0;
+        this.z2_1 = 0;
+        this.z1_2 = 0;
+        this.z2_2 = 0;
+      }
+      process(input) {
+        let output = input;
+        this.x_1 = output - (-1.56858163 * this.z1_1) - (0.96424138 * this.z2_1);
+        output = 0.96508099 * this.x_1 + (-1.56202714 * this.z1_1) + (0.96508099 * this.z2_1);
+        this.z2_1 = this.z1_1;
+        this.z1_1 = this.x_1;
+        this.x_2 = output - (-1.61100358 * this.z1_2) - (0.96592171 * this.z2_2);
+        output = 1.0 * this.x_2 + (-1.61854514 * this.z1_2) + (1.0 * this.z2_2);
+        this.z2_2 = this.z1_2;
+        this.z1_2 = this.x_2;
+        return output;
+      }
+    }
+
+    class ECGFilter {
+      constructor() {
+        this.z1 = 0;
+        this.z2 = 0;
+      }
+      process(input) {
+        let output = input;
+        this.x1 = output - (-1.47548044 * this.z1) - (0.58691951 * this.z2);
+        output = 0.02785977 * this.x1 + (0.05571953 * this.z1) + (0.02785977 * this.z2);
+        this.z2 = this.z1;
+        this.z1 = this.x1;
+        return output;
+      }
+    }
+
+    // BLE constants and parameters
+    const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+    const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+    const CONTROL_CHAR_UUID = "0000ff01-0000-1000-8000-00805f9b34fb";
+    const SINGLE_SAMPLE_LEN = 7;
+    const BLOCK_COUNT = 10;
+    const NEW_PACKET_LEN = SINGLE_SAMPLE_LEN * BLOCK_COUNT;
+    const DEBOUNCE_TIME = 1000;
+    const NUM_POINTS = 2000;
+    const SAMPLE_RATE = 500;
+
+    function createDevicePanel() {
+      // Create device panel container
+      const panel = document.createElement("div");
+      panel.classList.add("device-panel");
+
+      // Create control buttons container
+      const controlDiv = document.createElement("div");
+      controlDiv.classList.add("controls");
+      const connectBtn = document.createElement("button");
+      connectBtn.textContent = "Connect";
+      connectBtn.classList.add("btn");
+      const disconnectBtn = document.createElement("button");
+      disconnectBtn.textContent = "Disconnect";
+      disconnectBtn.classList.add("btn");
+      const startBtn = document.createElement("button");
+      startBtn.textContent = "Start";
+      startBtn.classList.add("btn");
+      const stopBtn = document.createElement("button");
+      stopBtn.textContent = "Stop";
+      stopBtn.classList.add("btn");
+
+      controlDiv.append(connectBtn, disconnectBtn, startBtn, stopBtn);
+      panel.appendChild(controlDiv);
+
+      // Create canvas container
+      const canvasContainer = document.createElement("div");
+      canvasContainer.classList.add("canvas-container");
+      
+      // Create canvas
+      const canvas = document.createElement("canvas");
+      canvasContainer.appendChild(canvas);
+      
+      // Create overlay
+      const overlay = document.createElement("div");
+      overlay.classList.add("canvas-overlay");
+
+      // Create top overlay metrics container
+      const overlayTop = document.createElement("div");
+      overlayTop.classList.add("overlay-top");
+      
+      // Signal quality display (top left)
+      const signalDisplay = document.createElement("div");
+      signalDisplay.classList.add("overlay-metric", "overlay-signal");
+      signalDisplay.textContent = "Signal: --";
+      overlayTop.appendChild(signalDisplay);
+      
+      // Time display (top right)
+      const timeDisplay = document.createElement("div");
+      timeDisplay.classList.add("overlay-metric", "overlay-time");
+      timeDisplay.textContent = "00:00";
+      overlayTop.appendChild(timeDisplay);
+      
+      overlay.appendChild(overlayTop);
+
+      // Create BPM display (centered at top or repositioned via media queries)
+      const bpmDisplay = document.createElement("div");
+      bpmDisplay.classList.add("overlay-bpm");
+      const heartIcon = document.createElement("div");
+      heartIcon.classList.add("heart-icon");
+      bpmDisplay.appendChild(heartIcon);
+      const bpmText = document.createElement("span");
+      bpmText.textContent = "-- BPM";
+      bpmDisplay.appendChild(bpmText);
+      overlay.appendChild(bpmDisplay);
+      
+      // Create fullscreen button
+      const fullscreenBtn = document.createElement("button");
+      fullscreenBtn.classList.add("fullscreen-btn");
+      fullscreenBtn.innerHTML = `
+        <svg viewBox="0 0 24 24">
+          <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+        </svg>
+      `;
+      fullscreenBtn.addEventListener("click", toggleFullscreen);
+      overlay.appendChild(fullscreenBtn);
+      
+      canvasContainer.appendChild(overlay);
+      panel.appendChild(canvasContainer);
+      document.getElementById("deviceContainer").appendChild(panel);
+
+      // Fullscreen toggle function using the Fullscreen API on canvasContainer
+      async function toggleFullscreen() {
+        if (document.fullscreenElement) {
+          // Exit fullscreen and unlock orientation if possible
+          document.exitFullscreen().catch(err => {
+            console.error("Error exiting fullscreen:", err);
+          });
+          canvasContainer.classList.remove("fullscreen");
+          if (screen.orientation && screen.orientation.unlock) {
+            screen.orientation.unlock();
+          }
+        } else {
+          try {
+            await canvasContainer.requestFullscreen();
+            canvasContainer.classList.add("fullscreen");
+            // Lock screen orientation to landscape if available
+            if (screen.orientation && screen.orientation.lock) {
+              await screen.orientation.lock("landscape");
+            }
+          } catch (err) {
+            console.error("Error entering fullscreen or locking orientation:", err);
+          }
+        }
+      }
+
+      // Set full resolution
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.clientWidth * dpr;
+      canvas.height = canvas.clientHeight * dpr;
+
+      // Create connection object
+      const connection = {
+        device: null,
+        server: null,
+        controlChar: null,
+        dataChar: null,
+        streaming: false,
+        connected: false,
+        canvas: canvas,
+        dataCh0: new Array(NUM_POINTS).fill(0),
+        sampleIndex: 0,
+        prevSampleCounter: null,
+        lastActionTime: 0,
+        wglp: null,
+        line0: null,
+        startTime: null,
+        notch0: new NotchFilter(),
+        ecg0: new ECGFilter(),
+        lastBeatTime: 0,
+        beatDetected: false,
+
+        updateButtonStates: function() {
+          connectBtn.disabled = this.connected || this.streaming;
+          disconnectBtn.disabled = !this.connected;
+          startBtn.disabled = !this.connected || this.streaming;
+          stopBtn.disabled = !this.streaming;
+        },
+
+        normalizeSample: function(sample) {
+          const ADC_MAX = 3249;
+          return (sample - ADC_MAX / 2) * (2 / ADC_MAX);
+        },
+
+        processSample: function(dataView) {
+          if (dataView.byteLength !== SINGLE_SAMPLE_LEN) return;
+          const sampleCounter = dataView.getUint8(0);
+          if (this.prevSampleCounter === null) {
+            this.prevSampleCounter = sampleCounter;
+          } else {
+            const expected = (this.prevSampleCounter + 1) % 256;
+            if (sampleCounter !== expected) {
+              console.log(`Missing sample: expected ${expected}, got ${sampleCounter}`);
+            }
+            this.prevSampleCounter = sampleCounter;
+          }
+          const rawCh0 = dataView.getInt16(1, false);
+          let normCh0 = this.normalizeSample(Math.max(0, Math.min(3249, rawCh0)));
+          normCh0 = this.ecg0.process(this.notch0.process(normCh0));
+          this.dataCh0[this.sampleIndex] = normCh0;
+          this.sampleIndex = (this.sampleIndex + 1) % NUM_POINTS;
+        },
+
+        handleNotification: function(event) {
+          const value = event.target.value;
+          if (value.byteLength === NEW_PACKET_LEN) {
+            for (let i = 0; i < NEW_PACKET_LEN; i += SINGLE_SAMPLE_LEN) {
+              const sampleBuffer = value.buffer.slice(i, i + SINGLE_SAMPLE_LEN);
+              this.processSample(new DataView(sampleBuffer));
+            }
+          } else if (value.byteLength === SINGLE_SAMPLE_LEN) {
+            this.processSample(new DataView(value.buffer));
+          } else {
+            console.log("Unexpected packet length: " + value.byteLength);
+          }
+        },
+
+        connectBLE: async function() {
+          try {
+            if (!navigator.bluetooth) {
+              console.log("Web Bluetooth API not available.");
+              return;
+            }
+            console.log("Requesting Bluetooth device...");
+            this.device = await navigator.bluetooth.requestDevice({
+              filters: [{ namePrefix: "NPG" }],
+              optionalServices: [SERVICE_UUID],
+            });
+            console.log("Connecting to GATT Server...");
+            this.server = await this.device.gatt.connect();
+            console.log("Getting Service...");
+            const service = await this.server.getPrimaryService(SERVICE_UUID);
+            console.log("Getting Control Characteristic...");
+            this.controlChar = await service.getCharacteristic(CONTROL_CHAR_UUID);
+            console.log("Getting Data Characteristic...");
+            this.dataChar = await service.getCharacteristic(DATA_CHAR_UUID);
+            this.connected = true;
+            this.updateButtonStates();
+            console.log("Device connected.");
+          } catch (error) {
+            console.log("Error: " + error);
+          }
+        },
+
+        disconnectBLE: async function() {
+          try {
+            if (this.device && this.device.gatt.connected) {
+              console.log("Disconnecting...");
+              await this.device.gatt.disconnect();
+              this.connected = false;
+              this.streaming = false;
+              this.updateButtonStates();
+              console.log("Device disconnected.");
+              
+              this.startTime = null;
+              timeDisplay.textContent = "00:00";
+            }
+          } catch (error) {
+            console.log("Error disconnecting: " + error);
+          }
+        },
+
+        startStream: async function() {
+          try {
+            if (!this.dataChar || !this.controlChar) {
+              console.log("Device not connected.");
+              return;
+            }
+            console.log("Sending START command...");
+            await this.controlChar.writeValue(new TextEncoder().encode("START"));
+            console.log("Starting notifications...");
+            await this.dataChar.startNotifications();
+            this.dataChar.addEventListener("characteristicvaluechanged", this.handleNotification.bind(this));
+            this.streaming = true;
+            this.updateButtonStates();
+            console.log("Streaming started.");
+            
+            this.startTime = Date.now();
+            updateMonitoringTime();
+          } catch (error) {
+            console.log("Error starting stream: " + error);
+          }
+        },
+
+        stopStream: async function() {
+          try {
+            if (this.dataChar && this.streaming) {
+              console.log("Stopping notifications...");
+              await this.dataChar.stopNotifications();
+              this.dataChar.removeEventListener("characteristicvaluechanged", this.handleNotification);
+              this.streaming = false;
+              this.updateButtonStates();
+              console.log("Streaming stopped.");
+              
+              this.startTime = null;
+            }
+          } catch (error) {
+            console.log("Error stopping stream: " + error);
+          }
+        },
+
+        computeBPM: function() {
+          const orderedData = this.dataCh0.slice(this.sampleIndex)
+                              .concat(this.dataCh0.slice(0, this.sampleIndex));
+          const maxVal = Math.max(...orderedData);
+          const threshold = maxVal * 0.5;
+          const refractorySamples = Math.floor(SAMPLE_RATE * 0.2);
+          let lastPeakIndex = -refractorySamples;
+          const peakIndices = [];
+          
+          for (let i = 1; i < orderedData.length - 1; i++) {
+            if (orderedData[i] > threshold &&
+                orderedData[i] > orderedData[i - 1] &&
+                orderedData[i] >= orderedData[i + 1]) {
+              if (i - lastPeakIndex >= refractorySamples) {
+                peakIndices.push(i);
+                lastPeakIndex = i;
+                this.triggerHeartbeat();
+              }
+            }
+          }
+          if (peakIndices.length < 2) {
+            return null;
+          }
+          let intervals = [];
+          for (let i = 1; i < peakIndices.length; i++) {
+            intervals.push(peakIndices[i] - peakIndices[i - 1]);
+          }
+          const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+          const bpm = (60 * SAMPLE_RATE) / avgInterval;
+          if (bpm < 40 || bpm > 200) {
+            return null;
+          }
+          return bpm;
+        },
+
+        triggerHeartbeat: function() {
+          this.beatDetected = true;
+          this.lastBeatTime = Date.now();
+          heartIcon.classList.add("beating");
+          const heartbeatDuration = 300; // ms
+          setTimeout(() => {
+            heartIcon.classList.remove("beating");
+          }, heartbeatDuration);
+        },
+
+        updateBPMDisplay: function(bpm) {
+          if (bpm !== null) {
+            bpmText.textContent = Math.round(bpm) + " BPM";
+            if (!heartIcon.classList.contains("beating")) {
+              heartIcon.style.animation = `none`;
+            }
+          } else {
+            bpmText.textContent = "-- BPM";
+            heartIcon.style.animation = "none";
+          }
+        },
+
+        updateSignalQuality: function(quality) {
+          signalDisplay.textContent = `Signal: ${quality}`;
+          if (quality === "Excellent") {
+            signalDisplay.style.color = "#2ed573";
+          } else if (quality === "Good") {
+            signalDisplay.style.color = "#7bed9f";
+          } else if (quality === "Fair") {
+            signalDisplay.style.color = "#ffbe76";
+          } else {
+            signalDisplay.style.color = "#ff6b81";
+          }
+        }
+      };
+
+      // Initialize WebGLPlot
+      connection.wglp = new WebglPlot(canvas);
+      connection.line0 = new WebglLine(new ColorRGBA(0.8, 0.2, 0.2, 1), NUM_POINTS);
+      connection.line0.lineWidth = 40;
+      connection.line0.arrangeX();
+      connection.wglp.addLine(connection.line0);
+
+      // Animation loop
+      function animate() {
+        requestAnimationFrame(animate);
+        if (!connection.dataCh0) return;
+        
+        const maxCh0 = Math.max(...connection.dataCh0.map(Math.abs));
+        const currentMax = Math.max(maxCh0, 1);
+        const scaleFactor = currentMax > 0.9 ? 0.9 / currentMax : 1;
+        
+        for (let i = 0; i < NUM_POINTS; i++) {
+          connection.line0.setY(i, connection.dataCh0[i] * scaleFactor);
+        }
+        connection.wglp.update();
+      }
+      animate();
+
+      // BPM calculation and display update
+      const bpmWindow = [];
+      const windowSize = 5;
+      let displayedBPM = null;
+      const maxChangePerUpdate = 2;
+
+      function updateMonitoringTime() {
+        if (connection.startTime) {
+          const elapsed = Math.floor((Date.now() - connection.startTime) / 1000);
+          const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
+          const seconds = (elapsed % 60).toString().padStart(2, '0');
+          timeDisplay.textContent = `${minutes}:${seconds}`;
+          requestAnimationFrame(updateMonitoringTime);
+        }
+      }
+
+      setInterval(() => {
+        const bpm = connection.computeBPM();
+        if (bpm !== null) {
+          bpmWindow.push(bpm);
+          if (bpmWindow.length > windowSize) {
+            bpmWindow.shift();
+          }
+          const avgBPM = bpmWindow.reduce((a, b) => a + b, 0) / bpmWindow.length;
+
+          if (displayedBPM === null) {
+            displayedBPM = avgBPM;
+          } else {
+            const diff = avgBPM - displayedBPM;
+            if (Math.abs(diff) > maxChangePerUpdate) {
+              displayedBPM += Math.sign(diff) * maxChangePerUpdate;
+            } else {
+              displayedBPM = avgBPM;
+            }
+          }
+          
+          connection.updateBPMDisplay(displayedBPM);
+          
+          if (bpmWindow.length > 2) {
+            const variance = bpmWindow.reduce((sum, val) => {
+              return sum + Math.pow(val - avgBPM, 2);
+            }, 0) / bpmWindow.length;
+            
+            if (variance < 5) {
+              connection.updateSignalQuality("Excellent");
+            } else if (variance < 10) {
+              connection.updateSignalQuality("Good");
+            } else {
+              connection.updateSignalQuality("Fair");
+            }
+          }
+        } else {
+          connection.updateBPMDisplay(null);
+          connection.updateSignalQuality("None");
+        }
+      }, 1000);
+
+      // Attach event listeners
+      connectBtn.addEventListener("click", connection.connectBLE.bind(connection));
+      disconnectBtn.addEventListener("click", connection.disconnectBLE.bind(connection));
+      startBtn.addEventListener("click", connection.startStream.bind(connection));
+      stopBtn.addEventListener("click", connection.stopStream.bind(connection));
+
+      connection.updateButtonStates();
+      return connection;
+    }
+
+    // Theme toggle functionality
+    const themeToggle = document.querySelector('.theme-toggle');
+    themeToggle.addEventListener('click', () => {
+      const currentTheme = document.documentElement.getAttribute('data-theme');
+      if (currentTheme === 'light') {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'dark');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('theme', 'light');
+      }
+    });
+
+    // Check for saved theme preference
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    }
+
+    // Create initial device panel
+    createDevicePanel();
+
+    // Listen for fullscreen change to update styles if needed
+    document.addEventListener("fullscreenchange", function() {
+      if (!document.fullscreenElement) {
+        const fullscreenContainers = document.querySelectorAll(".canvas-container.fullscreen");
+        fullscreenContainers.forEach(container => {
+          container.classList.remove("fullscreen");
+        });
+      }
+    });
+  </script>
+</body>
+</html>
