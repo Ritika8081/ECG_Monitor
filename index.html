@@ -28,72 +28,29 @@
       --overlay-bg: rgba(255, 255, 255, 0.8);
     }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    /* Fullscreen canvas setup */
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
       background-color: var(--background);
       color: var(--text);
-      margin: 0;
-      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      overflow: hidden;
       transition: all 0.3s ease;
-    }
-
-    h1 {
-      margin: 10px 0 20px;
-      color: var(--primary);
-      font-weight: 600;
-      font-size: clamp(1.5rem, 6vw, 2rem);
-      text-align: center;
-    }
-
-    .app-container {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
-
-    .controls {
-      margin-bottom: 15px;
-      display: flex;
-      justify-content: center;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .btn {
-      background-color: var(--secondary);
-      border: none;
-      color: var(--text);
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-size: 15px;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-weight: 650;
-      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-      min-width: 100px;
       touch-action: manipulation;
     }
 
-    .btn:hover:not(:disabled) {
-      background-color: var(--primary);
-      transform: translateY(-2px);
-      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    }
-
-    .btn:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-
+    /* Fullscreen canvas container */
     .canvas-container {
-      position: relative;
+      position: fixed;
+      top: 0;
+      left: 0;
       width: 100%;
-      height: 400px;
-      margin: 0 auto 20px;
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      height: 100%;
       background: var(--graph-bg);
-      transition: all 0.3s ease;
+      overflow: hidden;
     }
 
     canvas {
@@ -103,65 +60,50 @@
       background: var(--graph-bg);
     }
 
-    .canvas-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-      padding: 15px;
-      box-sizing: border-box;
-    }
-
-    /* Overlay containers for top metrics */
+    /* Combined top overlay for signal, timer and BPM */
     .overlay-top {
       position: absolute;
       top: 15px;
-      left: 15px;
-      right: 15px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-
-    .overlay-bpm {
-      background-color: var(--overlay-bg);
-      padding: 10px 20px;
-      border-radius: 25px;
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--primary);
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      backdrop-filter: blur(5px);
-      position: absolute;
       left: 50%;
       transform: translateX(-50%);
-      top: 15px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      pointer-events: auto;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      padding: 0 10px;
+      box-sizing: border-box;
     }
 
     .overlay-metric {
       background-color: var(--overlay-bg);
-      padding: 8px 15px;
+      padding: 6px 12px;
       border-radius: 20px;
-      font-size: 0.9rem;
+      font-size: 0.8rem;
       font-weight: 500;
       backdrop-filter: blur(5px);
+      white-space: nowrap;
     }
 
-    .overlay-signal {
-      /* Positioned in the top left */
-    }
-
-    .overlay-time {
-      /* Positioned in the top right */
+    .overlay-bpm {
+      background-color: var(--overlay-bg);
+      padding: 8px 16px;
+      border-radius: 25px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      backdrop-filter: blur(5px);
+      white-space: nowrap;
     }
 
     .heart-icon {
-      width: 22px;
-      height: 22px;
+      width: 18px;
+      height: 18px;
       background-color: var(--primary);
       transform: rotate(45deg);
       position: relative;
@@ -177,23 +119,24 @@
     .heart-icon:before,
     .heart-icon:after {
       content: "";
-      width: 22px;
-      height: 22px;
+      width: 18px;
+      height: 18px;
       background-color: var(--primary);
       border-radius: 50%;
       position: absolute;
     }
 
     .heart-icon:before {
-      top: -11px;
+      top: -9px;
       left: 0;
     }
 
     .heart-icon:after {
       top: 0;
-      left: -11px;
+      left: -9px;
     }
 
+    /* Fullscreen toggle button */
     .fullscreen-btn {
       position: absolute;
       bottom: 15px;
@@ -209,7 +152,7 @@
       justify-content: center;
       cursor: pointer;
       pointer-events: auto;
-      z-index: 10;
+      z-index: 20;
       opacity: 0.8;
       transition: all 0.2s;
       backdrop-filter: blur(5px);
@@ -226,27 +169,56 @@
       fill: currentColor;
     }
 
-    .device-panel {
-      border: none;
-      padding: 20px;
-      margin-bottom: 30px;
-      border-radius: 12px;
-      background-color: var(--panel-bg);
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-      transition: all 0.3s;
-    }
-
-    .device-panel:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-    }
-
-    .theme-toggle {
-      position: fixed;
+    /* Control buttons overlayed at bottom center */
+    .controls-overlay {
+      position: absolute;
       bottom: 20px;
-      right: 20px;
-      width: 50px;
-      height: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      pointer-events: auto;
+      z-index: 15;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: 100%;
+      padding: 0 10px;
+      box-sizing: border-box;
+    }
+
+    .btn {
+      background-color: var(--secondary);
+      border: none;
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-weight: 600;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      min-width: 80px;
+      touch-action: manipulation;
+    }
+
+    .btn:hover:not(:disabled) {
+      background-color: var(--primary);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Theme toggle button */
+    .theme-toggle {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       background-color: var(--secondary);
       color: var(--text);
@@ -256,8 +228,9 @@
       justify-content: center;
       cursor: pointer;
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-      z-index: 100;
+      z-index: 99999;
       transition: all 0.3s;
+      touch-action: manipulation;
     }
 
     .theme-toggle:hover {
@@ -265,33 +238,42 @@
     }
 
     .theme-toggle svg {
-      width: 24px;
-      height: 24px;
+      width: 20px;
+      height: 20px;
     }
 
-    .fullscreen {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: var(--background);
-      z-index: 1000;
-      padding: 0;
-      margin: 0;
-      border-radius: 0;
-      display: flex;
-      flex-direction: column;
+    /* Fullscreen theme toggle button */
+    .fullscreen-theme-toggle {
+      position: absolute;
+      top: 15px;
+      right: 15px;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background-color: var(--secondary);
+      color: var(--text);
+      border: none;
+      display: none; /* Hidden by default */
+      align-items: center;
       justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      z-index: 99999;
+      transition: all 0.3s;
+      touch-action: manipulation;
     }
 
-    .fullscreen .canvas-container {
-      height: calc(100vh - 80px);
-      margin: 0;
+    .fullscreen-theme-toggle:hover {
+      transform: scale(1.1);
     }
 
-    .fullscreen .controls {
-      margin: 20px;
+    .fullscreen-theme-toggle svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    .canvas-container.fullscreen .fullscreen-theme-toggle {
+      display: flex; /* Show only in fullscreen */
     }
 
     @keyframes pulse {
@@ -303,86 +285,101 @@
       100% { transform: rotate(45deg) scale(0.8); }
     }
 
-    @media (max-width: 768px) {
-      .canvas-container {
-        height: 250px;
+    /* Media queries for responsive adjustments */
+    @media (max-width: 480px) {
+      .overlay-top {
+        top: 10px;
+        gap: 6px;
       }
-
-      body {
-        padding: 15px;
-      }
-
-      .device-panel {
-        padding: 15px;
-      }
-
-      .btn {
-        padding: 8px 14px;
-        min-width: 80px;
-      }
-
-      .overlay-bpm {
-        font-size: 1.3rem;
-        padding: 8px 16px;
-      }
-
+      
       .overlay-metric {
-        font-size: 0.8rem;
+        padding: 4px 8px;
+        font-size: 0.7rem;
+      }
+      
+      .overlay-bpm {
         padding: 6px 12px;
+        font-size: 1rem;
+        gap: 6px;
       }
-
+      
       .heart-icon {
-        width: 18px;
-        height: 18px;
+        width: 14px;
+        height: 14px;
       }
-
+      
       .heart-icon:before,
       .heart-icon:after {
+        width: 14px;
+        height: 14px;
+      }
+      
+      .heart-icon:before {
+        top: -7px;
+      }
+      
+      .heart-icon:after {
+        left: -7px;
+      }
+      
+      .controls-overlay {
+        bottom: 15px;
+        gap: 6px;
+      }
+      
+      .btn {
+        padding: 6px 10px;
+        font-size: 12px;
+        min-width: 70px;
+      }
+      
+      .theme-toggle, .fullscreen-theme-toggle {
+        width: 36px;
+        height: 36px;
+      }
+      
+      .theme-toggle svg, .fullscreen-theme-toggle svg {
         width: 18px;
         height: 18px;
       }
 
-      .heart-icon:before {
-        top: -9px;
+      .fullscreen-btn {
+        width: 32px;
+        height: 32px;
+        bottom: 10px;
+        right: 10px;
       }
-
-      .heart-icon:after {
-        left: -9px;
+      
+      .fullscreen-btn svg {
+        width: 16px;
+        height: 16px;
       }
     }
 
-    @media (max-width: 480px) {
-      .canvas-container {
-        height: 200px;
+    @media (max-width: 360px) {
+      .overlay-top {
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
       }
-      /* Display control buttons in a two-column grid */
-      .controls {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 10px;
+      
+      .controls-overlay {
+        flex-direction: column;
+        align-items: center;
       }
+      
       .btn {
-        margin: 0;
-        padding: 7px 12px;
-        font-size: 13px;
-        min-width: 0;
-      }
-      /* Reposition BPM display to the bottom to avoid overlapping small top metrics */
-      .overlay-bpm {
-        top: auto;
-        bottom: 15px;
-        left: 50%;
-        transform: translateX(-50%);
+        width: 100%;
+        max-width: 120px;
       }
     }
   </style>
 </head>
 <body>
-  <div class="app-container">
-    <h1>Cardiac Monitor</h1>
-    <div id="deviceContainer"></div>
-  </div>
+  <!-- Fullscreen display container -->
+  <div id="deviceContainer"></div>
 
+  <!-- Theme toggle button using original icon -->
   <button class="theme-toggle" aria-label="Toggle theme">
     <svg viewBox="0 0 24 24">
       <path d="M12 18c-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6-2.7 6-6 6zm0-10c-2.2 0-4 1.8-4 4s1.8 4 4 4 4-1.8 4-4-1.8-4-4-4zm-7-2c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm14 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zM12 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm0 22c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm-9-9c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm18 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zM5.6 4.6c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm12.8 12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm0-12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm-12.8 12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0z"/>
@@ -441,13 +438,67 @@
     const SAMPLE_RATE = 500;
 
     function createDevicePanel() {
-      // Create device panel container
-      const panel = document.createElement("div");
-      panel.classList.add("device-panel");
+      // Create the full-screen canvas container
+      const canvasContainer = document.createElement("div");
+      canvasContainer.classList.add("canvas-container");
 
-      // Create control buttons container
-      const controlDiv = document.createElement("div");
-      controlDiv.classList.add("controls");
+      // Create canvas element
+      const canvas = document.createElement("canvas");
+      canvasContainer.appendChild(canvas);
+
+      // Create overlay container for all overlays
+      const overlay = document.createElement("div");
+      overlay.classList.add("canvas-overlay");
+
+      // Combined top overlay for signal, timer and BPM
+      const overlayTop = document.createElement("div");
+      overlayTop.classList.add("overlay-top");
+
+      const signalDisplay = document.createElement("div");
+      signalDisplay.classList.add("overlay-metric");
+      signalDisplay.textContent = "Signal: --";
+
+      const timeDisplay = document.createElement("div");
+      timeDisplay.classList.add("overlay-metric");
+      timeDisplay.textContent = "00:00";
+
+      const bpmDisplay = document.createElement("div");
+      bpmDisplay.classList.add("overlay-bpm");
+      const heartIcon = document.createElement("div");
+      heartIcon.classList.add("heart-icon");
+      bpmDisplay.appendChild(heartIcon);
+      const bpmText = document.createElement("span");
+      bpmText.textContent = "-- BPM";
+      bpmDisplay.appendChild(bpmText);
+
+      overlayTop.append(signalDisplay, timeDisplay, bpmDisplay);
+      overlay.appendChild(overlayTop);
+
+      // Fullscreen theme toggle button
+      const fullscreenThemeToggle = document.createElement("button");
+      fullscreenThemeToggle.classList.add("fullscreen-theme-toggle");
+      fullscreenThemeToggle.setAttribute("aria-label", "Toggle theme in fullscreen");
+      fullscreenThemeToggle.innerHTML = `
+        <svg viewBox="0 0 24 24">
+          <path d="M12 18c-3.3 0-6-2.7-6-6s2.7-6 6-6 6 2.7 6 6-2.7 6-6 6zm0-10c-2.2 0-4 1.8-4 4s1.8 4 4 4 4-1.8 4-4-1.8-4-4-4zm-7-2c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm14 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zM12 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm0 22c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm-9-9c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zm18 0c-.6 0-1-.4-1-1s.4-1 1-1 1 .4 1 1-.4 1-1 1zM5.6 4.6c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm12.8 12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm0-12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0zm-12.8 12.8c-.4-.4-.4-1 0-1.4s1-.4 1.4 0c.4.4.4 1 0 1.4-.4.4-1 .4-1.4 0z"/>
+        </svg>
+      `;
+      overlay.appendChild(fullscreenThemeToggle);
+
+      // Fullscreen toggle button remains in the overlay
+      const fullscreenBtn = document.createElement("button");
+      fullscreenBtn.classList.add("fullscreen-btn");
+      fullscreenBtn.innerHTML = `
+        <svg viewBox="0 0 24 24">
+          <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+        </svg>
+      `;
+      fullscreenBtn.addEventListener("click", toggleFullscreen);
+      overlay.appendChild(fullscreenBtn);
+
+      // Controls overlay container (buttons at bottom center)
+      const controlsOverlay = document.createElement("div");
+      controlsOverlay.classList.add("controls-overlay");
       const connectBtn = document.createElement("button");
       connectBtn.textContent = "Connect";
       connectBtn.classList.add("btn");
@@ -460,70 +511,15 @@
       const stopBtn = document.createElement("button");
       stopBtn.textContent = "Stop";
       stopBtn.classList.add("btn");
+      controlsOverlay.append(connectBtn, disconnectBtn, startBtn, stopBtn);
+      overlay.appendChild(controlsOverlay);
 
-      controlDiv.append(connectBtn, disconnectBtn, startBtn, stopBtn);
-      panel.appendChild(controlDiv);
-
-      // Create canvas container
-      const canvasContainer = document.createElement("div");
-      canvasContainer.classList.add("canvas-container");
-      
-      // Create canvas
-      const canvas = document.createElement("canvas");
-      canvasContainer.appendChild(canvas);
-      
-      // Create overlay
-      const overlay = document.createElement("div");
-      overlay.classList.add("canvas-overlay");
-
-      // Create top overlay metrics container
-      const overlayTop = document.createElement("div");
-      overlayTop.classList.add("overlay-top");
-      
-      // Signal quality display (top left)
-      const signalDisplay = document.createElement("div");
-      signalDisplay.classList.add("overlay-metric", "overlay-signal");
-      signalDisplay.textContent = "Signal: --";
-      overlayTop.appendChild(signalDisplay);
-      
-      // Time display (top right)
-      const timeDisplay = document.createElement("div");
-      timeDisplay.classList.add("overlay-metric", "overlay-time");
-      timeDisplay.textContent = "00:00";
-      overlayTop.appendChild(timeDisplay);
-      
-      overlay.appendChild(overlayTop);
-
-      // Create BPM display (centered at top or repositioned via media queries)
-      const bpmDisplay = document.createElement("div");
-      bpmDisplay.classList.add("overlay-bpm");
-      const heartIcon = document.createElement("div");
-      heartIcon.classList.add("heart-icon");
-      bpmDisplay.appendChild(heartIcon);
-      const bpmText = document.createElement("span");
-      bpmText.textContent = "-- BPM";
-      bpmDisplay.appendChild(bpmText);
-      overlay.appendChild(bpmDisplay);
-      
-      // Create fullscreen button
-      const fullscreenBtn = document.createElement("button");
-      fullscreenBtn.classList.add("fullscreen-btn");
-      fullscreenBtn.innerHTML = `
-        <svg viewBox="0 0 24 24">
-          <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-        </svg>
-      `;
-      fullscreenBtn.addEventListener("click", toggleFullscreen);
-      overlay.appendChild(fullscreenBtn);
-      
       canvasContainer.appendChild(overlay);
-      panel.appendChild(canvasContainer);
-      document.getElementById("deviceContainer").appendChild(panel);
+      document.getElementById("deviceContainer").appendChild(canvasContainer);
 
       // Fullscreen toggle function using the Fullscreen API on canvasContainer
       async function toggleFullscreen() {
         if (document.fullscreenElement) {
-          // Exit fullscreen and unlock orientation if possible
           document.exitFullscreen().catch(err => {
             console.error("Error exiting fullscreen:", err);
           });
@@ -535,7 +531,6 @@
           try {
             await canvasContainer.requestFullscreen();
             canvasContainer.classList.add("fullscreen");
-            // Lock screen orientation to landscape if available
             if (screen.orientation && screen.orientation.lock) {
               await screen.orientation.lock("landscape");
             }
@@ -545,7 +540,7 @@
         }
       }
 
-      // Set full resolution
+      // Set high resolution for canvas
       const dpr = window.devicePixelRatio || 1;
       canvas.width = canvas.clientWidth * dpr;
       canvas.height = canvas.clientHeight * dpr;
@@ -579,7 +574,7 @@
         },
 
         normalizeSample: function(sample) {
-          const ADC_MAX = 3249;
+          const ADC_MAX = 4096;
           return (sample - ADC_MAX / 2) * (2 / ADC_MAX);
         },
 
@@ -596,7 +591,7 @@
             this.prevSampleCounter = sampleCounter;
           }
           const rawCh0 = dataView.getInt16(1, false);
-          let normCh0 = this.normalizeSample(Math.max(0, Math.min(3249, rawCh0)));
+          let normCh0 = this.normalizeSample(Math.max(0, Math.min(4096, rawCh0)));
           normCh0 = this.ecg0.process(this.notch0.process(normCh0));
           this.dataCh0[this.sampleIndex] = normCh0;
           this.sampleIndex = (this.sampleIndex + 1) % NUM_POINTS;
@@ -652,7 +647,6 @@
               this.streaming = false;
               this.updateButtonStates();
               console.log("Device disconnected.");
-              
               this.startTime = null;
               timeDisplay.textContent = "00:00";
             }
@@ -675,7 +669,6 @@
             this.streaming = true;
             this.updateButtonStates();
             console.log("Streaming started.");
-            
             this.startTime = Date.now();
             updateMonitoringTime();
           } catch (error) {
@@ -692,7 +685,6 @@
               this.streaming = false;
               this.updateButtonStates();
               console.log("Streaming stopped.");
-              
               this.startTime = null;
             }
           } catch (error) {
@@ -778,7 +770,7 @@
       connection.line0.arrangeX();
       connection.wglp.addLine(connection.line0);
 
-      // Animation loop
+      // Animation loop for plotting data
       function animate() {
         requestAnimationFrame(animate);
         if (!connection.dataCh0) return;
@@ -851,7 +843,7 @@
         }
       }, 1000);
 
-      // Attach event listeners
+      // Attach event listeners to control buttons
       connectBtn.addEventListener("click", connection.connectBLE.bind(connection));
       disconnectBtn.addEventListener("click", connection.disconnectBLE.bind(connection));
       startBtn.addEventListener("click", connection.startStream.bind(connection));
@@ -862,8 +854,7 @@
     }
 
     // Theme toggle functionality
-    const themeToggle = document.querySelector('.theme-toggle');
-    themeToggle.addEventListener('click', () => {
+    function toggleTheme() {
       const currentTheme = document.documentElement.getAttribute('data-theme');
       if (currentTheme === 'light') {
         document.documentElement.removeAttribute('data-theme');
@@ -872,7 +863,11 @@
         document.documentElement.setAttribute('data-theme', 'light');
         localStorage.setItem('theme', 'light');
       }
-    });
+    }
+
+    // Theme toggle buttons
+    const themeToggle = document.querySelector('.theme-toggle');
+    themeToggle.addEventListener('click', toggleTheme);
 
     // Check for saved theme preference
     const savedTheme = localStorage.getItem('theme');
@@ -880,7 +875,7 @@
       document.documentElement.setAttribute('data-theme', 'light');
     }
 
-    // Create initial device panel
+    // Create the full-screen device panel (canvas + overlays)
     createDevicePanel();
 
     // Listen for fullscreen change to update styles if needed
@@ -890,6 +885,14 @@
         fullscreenContainers.forEach(container => {
           container.classList.remove("fullscreen");
         });
+      }
+    });
+
+    // Add event listener for the fullscreen theme toggle button after it's created
+    document.addEventListener('DOMContentLoaded', function() {
+      const fullscreenThemeToggle = document.querySelector('.fullscreen-theme-toggle');
+      if (fullscreenThemeToggle) {
+        fullscreenThemeToggle.addEventListener('click', toggleTheme);
       }
     });
   </script>
