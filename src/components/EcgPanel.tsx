@@ -1,9 +1,10 @@
-// components/EcgPanel.tsx
 "use client";
 import React, { useEffect, useRef, useState } from "react";
+import { Heart, Bluetooth, Eye, EyeOff, Activity, Timer, Zap, BarChart3, TrendingUp } from "lucide-react";
 import { WebglPlot, WebglLine, ColorRGBA } from "webgl-plot";
-import { NotchFilter, ECGFilter } from '../lib/filters';
 import { BPMCalculator } from '../lib/bpmCalculator';
+import { NotchFilter, ECGFilter } from '../lib/filters';
+import { HRVCalculator } from '../lib/hrvCalculator';
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -20,18 +21,37 @@ export default function EcgFullPanel() {
   const [startTime, setStartTime] = useState<number | null>(null);
   const [bpmDisplay, setBpmDisplay] = useState("-- BPM");
   const [peaksVisible, setPeaksVisible] = useState(true);
+  const [timer, setTimer] = useState("00:00");
+  const [showHRV, setShowHRV] = useState(false);
+  type HRVMetrics = {
+    sampleCount: number;
+    assessment: {
+      color: string;
+      status: string;
+      description: string;
+    };
+    rmssd: number;
+    sdnn: number;
+    pnn50: number;
+    triangularIndex: number;
+    lfhf: {
+      ratio: number;
+    };
+    // Add any other fields returned by getAllMetrics()
+  };
 
-  const wglpRef = useRef<WebglPlot>();
-  const lineRef = useRef<WebglLine>();
-  const peakLineRef = useRef<WebglLine>();
+  const [hrvMetrics, setHrvMetrics] = useState<HRVMetrics | null>(null);
+
+  const wglpRef = useRef<WebglPlot | null>(null);
+  const lineRef = useRef<WebglLine | null>(null);
+  const peakLineRef = useRef<WebglLine | null>(null);
   const dataCh0 = useRef(new Array(NUM_POINTS).fill(0));
   const peakData = useRef(new Array(NUM_POINTS).fill(0));
   const sampleIndex = useRef(0);
   const notch = useRef(new NotchFilter());
   const ecg = useRef(new ECGFilter());
-
-  // Replace BPM logic with calculator
   const bpmCalculator = useRef(new BPMCalculator(SAMPLE_RATE, 5, 40, 200));
+  const hrvCalculator = useRef(new HRVCalculator()); // Add HRV calculator
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -41,11 +61,11 @@ export default function EcgFullPanel() {
     canvas.height = canvas.clientHeight * dpr;
 
     const wglp = new WebglPlot(canvas);
-    const line = new WebglLine(new ColorRGBA(0.8, 0.2, 0.2, 1), NUM_POINTS);
-    line.lineWidth = 2; // Made thinner
+    const line = new WebglLine(new ColorRGBA(0, 1, 0.2, 1), NUM_POINTS); // ECG Green
+    line.lineWidth = 2;
     line.arrangeX();
-    const peakLine = new WebglLine(new ColorRGBA(0, 1, 0, 1), NUM_POINTS);
-    peakLine.lineWidth = 2;
+    const peakLine = new WebglLine(new ColorRGBA(1, 0.2, 0.2, 1), NUM_POINTS); // Red peaks
+    peakLine.lineWidth = 3;
     peakLine.arrangeX();
     wglp.addLine(line);
     wglp.addLine(peakLine);
@@ -71,35 +91,66 @@ export default function EcgFullPanel() {
     return maxAbs > 0.9 ? 0.9 / maxAbs : 1;
   }
 
-  // Simplified peak update using BPM calculator
+  // Add this function to see what data we have
   function updatePeaks() {
     const peaks = bpmCalculator.current.detectPeaks(dataCh0.current);
     peakData.current = bpmCalculator.current.generatePeakVisualization(dataCh0.current, peaks);
+    
+    // Debug logging
+    console.log('Peaks detected:', peaks.length);
+    console.log('Data max:', Math.max(...dataCh0.current));
+    console.log('Data min:', Math.min(...dataCh0.current));
+    
+    // Extract RR intervals for HRV analysis
+    if (peaks.length >= 2) {
+      console.log('Extracting RR intervals from', peaks.length, 'peaks');
+      hrvCalculator.current.extractRRFromPeaks(peaks, SAMPLE_RATE);
+      
+      // Force update HRV metrics
+      const metrics = hrvCalculator.current.getAllMetrics();
+      console.log('HRV Metrics:', metrics);
+      setHrvMetrics(metrics);
+    } else {
+      console.log('Not enough peaks for HRV analysis');
+    }
   }
 
   useEffect(() => {
-    const timer = setInterval(() => {
+    const timerInterval = setInterval(() => {
       if (startTime) {
-        const elapsed = Math.floor((Date.now() - startTime) / 1000);
+        const elapsed = Math.floor((Date.now() - startTime) / 1000); // Define elapsed here
         const min = String(Math.floor(elapsed / 60)).padStart(2, "0");
         const sec = String(elapsed % 60).padStart(2, "0");
-        document.getElementById("timer")!.textContent = `${min}:${sec}`;
+        setTimer(`${min}:${sec}`);
       }
       
-      // Use BPM calculator
       const bpm = bpmCalculator.current.computeBPM(dataCh0.current);
       if (bpm) {
         setBpmDisplay(Math.round(bpm) + " BPM");
       } else {
         setBpmDisplay("-- BPM");
       }
+
+      // Always try to update HRV metrics when connected
+      if (connected) {
+        const metrics = hrvCalculator.current.getAllMetrics();
+        console.log('Timer HRV update:', metrics.sampleCount, 'samples');
+        if (metrics.sampleCount > 0) {
+          setHrvMetrics(metrics);
+        }
+      }
     }, 1000);
-    return () => clearInterval(timer);
-  }, [startTime]);
+    return () => clearInterval(timerInterval);
+  }, [startTime, connected]);
 
   async function connect() {
     try {
-      const device = await navigator.bluetooth.requestDevice({ 
+      // Check if navigator.bluetooth is available
+      if (!('bluetooth' in navigator)) {
+        alert("Web Bluetooth API is not supported in this browser.");
+        return;
+      }
+      const device = await (navigator as any).bluetooth.requestDevice({ 
         filters: [{ namePrefix: "NPG" }], 
         optionalServices: [SERVICE_UUID] 
       });
@@ -111,8 +162,8 @@ export default function EcgFullPanel() {
       await controlChar?.writeValue(new TextEncoder().encode("START"));
       await dataChar?.startNotifications();
 
-      dataChar?.addEventListener("characteristicvaluechanged", (event) => {
-        const value = (event.target as BluetoothRemoteGATTCharacteristic).value!;
+      dataChar?.addEventListener("characteristicvaluechanged", (event: any) => {
+        const value = event.target.value;
         if (value.byteLength === NEW_PACKET_LEN) {
           for (let i = 0; i < NEW_PACKET_LEN; i += SINGLE_SAMPLE_LEN) {
             const view = new DataView(value.buffer.slice(i, i + SINGLE_SAMPLE_LEN));
@@ -128,33 +179,217 @@ export default function EcgFullPanel() {
 
       setConnected(true);
       setStartTime(Date.now());
-      
-      // Reset BPM calculator when connecting
       bpmCalculator.current.reset();
+      hrvCalculator.current.reset(); // Reset HRV calculator
       
     } catch (e) {
       console.error("BLE Connection failed:", e);
     }
   }
 
-  // Add function to get BPM stats for debugging
   const getBPMStats = () => {
-    return bpmCalculator.current.getStats();
+    console.log('BPM Stats:', bpmCalculator.current.getStats());
+    console.log('HRV Metrics:', hrvCalculator.current.getAllMetrics());
   };
 
+  // Add this useEffect to auto-show HRV panel when we have data
+  useEffect(() => {
+    if (connected && hrvMetrics && hrvMetrics.sampleCount > 2 && !showHRV) {
+      setTimeout(() => setShowHRV(true), 2000); // Auto-show after 2 seconds
+    }
+  }, [connected, hrvMetrics, showHRV]);
+
   return (
-    <div style={{ position: "relative", width: "100%", height: "100vh", background: "#000" }}>
-      <canvas ref={canvasRef} style={{ width: "100%", height: "100%" }} />
-      <div style={{ position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 20 }}>
-        <div id="timer" style={{ padding: "5px 10px", background: "rgba(0,0,0,0.5)", borderRadius: 12, color: "white" }}>00:00</div>
-        <div style={{ padding: "5px 10px", background: "rgba(0,0,0,0.5)", borderRadius: 12, color: "#ff3838", fontWeight: 600 }}>{bpmDisplay}</div>
+    <div className="relative w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
+      {/* Grid background */}
+      <div className="absolute inset-0 opacity-10">
+        <div className="h-full w-full bg-grid-pattern bg-[size:40px_40px]"></div>
       </div>
-      <button onClick={connect} style={{ position: "absolute", bottom: 20, left: "50%", transform: "translateX(-50%)", padding: "10px 20px", background: "#1e293b", color: "#fff", border: "none", borderRadius: 8 }}>
-        Connect
-      </button>
-      <button onClick={() => setPeaksVisible(!peaksVisible)} style={{ position: "absolute", bottom: 20, right: 20, padding: "10px 20px", background: "#0f172a", color: "#fff", border: "none", borderRadius: 8 }}>
-        {peaksVisible ? "Hide Peaks" : "Show Peaks"}
-      </button>
+      
+      {/* Main canvas */}
+      <canvas 
+        ref={canvasRef} 
+        className="absolute inset-0 w-full h-full" 
+        style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}
+      />
+      
+      {/* Header section */}
+      <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/40 to-transparent ">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 text-white">
+              <Activity className="w-6 h-6 text-red-400" />
+              <h1 className="text-xl font-bold bg-gradient-to-r from-red-400 to-pink-400 bg-clip-text text-transparent">
+                ECG Monitor
+              </h1>
+            </div>
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
+              connected 
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+            }`}>
+              <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
+              {connected ? 'Connected' : 'Disconnected'}
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 px-4 py-2 bg-black/30 rounded-xl border border-white/10">
+              <Timer className="w-4 h-4 text-blue-400" />
+              <span className="text-white font-mono text-lg">{timer}</span>
+            </div>
+            <div className="flex items-center gap-2 px-4 py-2 bg-black/30 rounded-xl border border-white/10">
+              <Heart className="w-5 h-5 text-red-400 animate-pulse" />
+              <span className="text-red-400 font-bold text-xl">{bpmDisplay}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* HRV Panel */}
+      {showHRV && (
+        <div className="absolute left-4 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-400" />
+              HRV Analysis
+            </h3>
+            <button 
+              onClick={() => setShowHRV(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+          
+          {hrvMetrics && hrvMetrics.sampleCount > 0 ? (
+            <>
+              {/* HRV Status */}
+              <div className="mb-4 p-3 rounded-lg border" style={{ 
+                backgroundColor: `${hrvMetrics.assessment.color}20`,
+                borderColor: `${hrvMetrics.assessment.color}40`
+              }}>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">Status:</span>
+                  <span className="font-bold" style={{ color: hrvMetrics.assessment.color }}>
+                    {hrvMetrics.assessment.status}
+                  </span>
+                </div>
+                <p className="text-sm text-gray-300 mt-1">
+                  {hrvMetrics.assessment.description}
+                </p>
+              </div>
+
+              {/* Time Domain Metrics */}
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-300">RMSSD:</span>
+                  <span className="font-mono text-green-400">{hrvMetrics.rmssd.toFixed(1)} ms</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">SDNN:</span>
+                  <span className="font-mono text-blue-400">{hrvMetrics.sdnn.toFixed(1)} ms</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">pNN50:</span>
+                  <span className="font-mono text-yellow-400">{hrvMetrics.pnn50.toFixed(1)}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Triangular:</span>
+                  <span className="font-mono text-purple-400">{hrvMetrics.triangularIndex.toFixed(1)}</span>
+                </div>
+              </div>
+
+              {/* Frequency Domain */}
+              <div className="mt-4 pt-4 border-t border-white/20">
+                <h4 className="text-sm font-medium text-gray-300 mb-2">Frequency Domain</h4>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-400 text-sm">LF/HF Ratio:</span>
+                    <span className="font-mono text-orange-400 text-sm">
+                      {hrvMetrics.lfhf.ratio.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sample Info */}
+              <div className="mt-4 pt-4 border-t border-white/20 text-xs text-gray-400">
+                Samples: {hrvMetrics.sampleCount} RR intervals
+              </div>
+            </>
+          ) : (
+            <div className="text-center text-gray-400 py-8">
+              <div className="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p>Collecting heart beats...</p>
+              <p className="text-sm mt-2">Need at least 2 peaks for analysis</p>
+              {connected && (
+                <p className="text-xs mt-2">
+                  Connected - waiting for ECG data...
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Control panel */}
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/40 to-transparent">
+        <div className="flex items-center justify-center gap-4">
+          <button 
+            onClick={connect}
+            disabled={connected}
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+              connected 
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed' 
+                : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 hover:scale-105 active:scale-95'
+            }`}
+          >
+            <Bluetooth className="w-5 h-5" />
+            {connected ? 'Connected' : 'Connect Device'}
+          </button>
+          
+          <button 
+            onClick={() => setPeaksVisible(!peaksVisible)}
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+              peaksVisible 
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30' 
+                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+            } hover:scale-105 active:scale-95`}
+          >
+            {peaksVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+            {peaksVisible ? 'Hide Peaks' : 'Show Peaks'}
+          </button>
+
+          <button 
+            onClick={() => setShowHRV(!showHRV)}
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+              showHRV 
+                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30' 
+                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+            } hover:scale-105 active:scale-95`}
+          >
+            <BarChart3 className="w-5 h-5" />
+            {showHRV ? 'Hide HRV' : 'Show HRV'}
+          </button>
+
+          <button 
+            onClick={getBPMStats}
+            className="flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/30 hover:scale-105 active:scale-95"
+          >
+            <Zap className="w-5 h-5" />
+            Debug Stats
+          </button>
+        </div>
+      </div>
+
+      {/* Pulse animation overlay */}
+      <div className="absolute top-4 right-4 pointer-events-none">
+        <div className="relative">
+          <div className="w-4 h-4 bg-red-500 rounded-full animate-ping"></div>
+          <div className="absolute top-0 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+        </div>
+      </div>
     </div>
   );
 }
