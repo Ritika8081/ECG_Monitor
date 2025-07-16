@@ -270,13 +270,6 @@ export default function EcgFullPanel() {
     console.log('HRV Metrics:', hrvCalculator.current.getAllMetrics());
   };
 
-  // Add this useEffect to auto-show HRV panel when we have data
-  useEffect(() => {
-    if (connected && hrvMetrics && hrvMetrics.sampleCount > 2 && !showHRV) {
-      setTimeout(() => setShowHRV(true), 2000); // Auto-show after 2 seconds
-    }
-  }, [connected, hrvMetrics, showHRV]);
-
   // Add this to keep PQRST labels moving with the wave
   useEffect(() => {
     if (!showPQRST) return;
