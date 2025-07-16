@@ -5,6 +5,7 @@ import { WebglPlot, WebglLine, ColorRGBA } from "webgl-plot";
 import { BPMCalculator } from '../lib/bpmCalculator';
 import { NotchFilter, ECGFilter } from '../lib/filters';
 import { HRVCalculator } from '../lib/hrvCalculator';
+import { PQRSTDetector, PQRSTPoint } from '../lib/pqrstDetector';
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -23,6 +24,7 @@ export default function EcgFullPanel() {
   const [peaksVisible, setPeaksVisible] = useState(true);
   const [timer, setTimer] = useState("00:00");
   const [showHRV, setShowHRV] = useState(false);
+  const [showPQRST, setShowPQRST] = useState(false);
   type HRVMetrics = {
     sampleCount: number;
     assessment: {
@@ -52,6 +54,16 @@ export default function EcgFullPanel() {
   const ecg = useRef(new ECGFilter());
   const bpmCalculator = useRef(new BPMCalculator(SAMPLE_RATE, 5, 40, 200));
   const hrvCalculator = useRef(new HRVCalculator()); // Add HRV calculator
+  const pqrstDetector = useRef(new PQRSTDetector(SAMPLE_RATE));
+  const pqrstPoints = useRef<PQRSTPoint[]>([]);
+  const pLineRef = useRef<WebglLine | null>(null);
+  const qLineRef = useRef<WebglLine | null>(null);
+  const rLineRef = useRef<WebglLine | null>(null);
+  const sLineRef = useRef<WebglLine | null>(null);
+  const tLineRef = useRef<WebglLine | null>(null);
+
+  // Add this state to store currently visible PQRST points
+  const [visiblePQRST, setVisiblePQRST] = useState<PQRSTPoint[]>([]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -61,18 +73,49 @@ export default function EcgFullPanel() {
     canvas.height = canvas.clientHeight * dpr;
 
     const wglp = new WebglPlot(canvas);
-    const line = new WebglLine(new ColorRGBA(0, 1, 0.2, 1), NUM_POINTS); // ECG Green
-    line.lineWidth = 2;
+    
+    // Create ECG line (main signal)
+    const line = new WebglLine(new ColorRGBA(0, 1, 0.2, 1), NUM_POINTS);
     line.arrangeX();
-    const peakLine = new WebglLine(new ColorRGBA(1, 0.2, 0.2, 1), NUM_POINTS); // Red peaks
-    peakLine.lineWidth = 3;
+    
+    // Create peak line
+    const peakLine = new WebglLine(new ColorRGBA(1, 0.2, 0.2, 1), NUM_POINTS);
     peakLine.arrangeX();
+    
+    // Create PQRST lines
+    const pLine = new WebglLine(new ColorRGBA(1, 0.7, 0, 1), NUM_POINTS); // Orange for P
+    pLine.arrangeX();
+    
+    const qLine = new WebglLine(new ColorRGBA(0.2, 0.6, 1, 1), NUM_POINTS); // Blue for Q
+    qLine.arrangeX();
+    
+    const rLine = new WebglLine(new ColorRGBA(1, 0, 0, 1), NUM_POINTS); // Red for R
+    rLine.arrangeX();
+    
+    const sLine = new WebglLine(new ColorRGBA(0, 0.8, 1, 1), NUM_POINTS); // Cyan for S
+    sLine.arrangeX();
+    
+    const tLine = new WebglLine(new ColorRGBA(0.8, 0.3, 1, 1), NUM_POINTS); // Purple for T
+    tLine.arrangeX();
+    
+    // Add all lines to the plot
     wglp.addLine(line);
     wglp.addLine(peakLine);
+    wglp.addLine(pLine);
+    wglp.addLine(qLine);
+    wglp.addLine(rLine);
+    wglp.addLine(sLine);
+    wglp.addLine(tLine);
 
+    // Store references
     wglpRef.current = wglp;
     lineRef.current = line;
     peakLineRef.current = peakLine;
+    pLineRef.current = pLine;
+    qLineRef.current = qLine;
+    rLineRef.current = rLine;
+    sLineRef.current = sLine;
+    tLineRef.current = tLine;
 
     const render = () => {
       requestAnimationFrame(render);
@@ -80,11 +123,26 @@ export default function EcgFullPanel() {
       for (let i = 0; i < NUM_POINTS; i++) {
         line.setY(i, dataCh0.current[i] * scale);
         peakLine.setY(i, peaksVisible ? peakData.current[i] : 0);
+        
+        // Update PQRST lines if visible
+        if (showPQRST) {
+          pLine.setY(i, pLineRef.current?.getY(i) || 0);
+          qLine.setY(i, qLineRef.current?.getY(i) || 0);
+          rLine.setY(i, rLineRef.current?.getY(i) || 0);
+          sLine.setY(i, sLineRef.current?.getY(i) || 0);
+          tLine.setY(i, tLineRef.current?.getY(i) || 0);
+        } else {
+          pLine.setY(i, 0);
+          qLine.setY(i, 0);
+          rLine.setY(i, 0);
+          sLine.setY(i, 0);
+          tLine.setY(i, 0);
+        }
       }
       wglp.update();
     };
     render();
-  }, [peaksVisible]);
+  }, [peaksVisible, showPQRST]);
 
   function getScaleFactor() {
     const maxAbs = Math.max(...dataCh0.current.map(Math.abs), 0.1);
@@ -96,8 +154,17 @@ export default function EcgFullPanel() {
     const peaks = bpmCalculator.current.detectPeaks(dataCh0.current);
     peakData.current = bpmCalculator.current.generatePeakVisualization(dataCh0.current, peaks);
     
+    // Detect PQRST waves
+    pqrstPoints.current = pqrstDetector.current.detectWaves(dataCh0.current, peaks, sampleIndex.current);
+    
+    // Update visible PQRST points when enabled
+    if (showPQRST) {
+      setVisiblePQRST([...pqrstPoints.current]);
+    }
+    
     // Debug logging
     console.log('Peaks detected:', peaks.length);
+    console.log('PQRST points detected:', pqrstPoints.current.length);
     console.log('Data max:', Math.max(...dataCh0.current));
     console.log('Data min:', Math.min(...dataCh0.current));
     
@@ -114,6 +181,15 @@ export default function EcgFullPanel() {
       console.log('Not enough peaks for HRV analysis');
     }
   }
+
+  // Add an effect to clear visible points when toggling off
+  useEffect(() => {
+    if (!showPQRST) {
+      setVisiblePQRST([]);
+    } else if (pqrstPoints.current.length > 0) {
+      setVisiblePQRST([...pqrstPoints.current]);
+    }
+  }, [showPQRST]);
 
   useEffect(() => {
     const timerInterval = setInterval(() => {
@@ -173,6 +249,8 @@ export default function EcgFullPanel() {
             dataCh0.current[sampleIndex.current] = filtered;
             sampleIndex.current = (sampleIndex.current + 1) % NUM_POINTS;
           }
+          
+          // Call updatePeaks to refresh the PQRST points with each new data packet
           updatePeaks();
         }
       });
@@ -198,6 +276,20 @@ export default function EcgFullPanel() {
       setTimeout(() => setShowHRV(true), 2000); // Auto-show after 2 seconds
     }
   }, [connected, hrvMetrics, showHRV]);
+
+  // Add this to keep PQRST labels moving with the wave
+  useEffect(() => {
+    if (!showPQRST) return;
+    
+    // Update the PQRST labels position when the data is refreshed
+    const pqrstUpdateInterval = setInterval(() => {
+      if (pqrstPoints.current.length > 0 && showPQRST) {
+        setVisiblePQRST([...pqrstPoints.current]);
+      }
+    }, 50); // Update at 20fps for smooth movement
+    
+    return () => clearInterval(pqrstUpdateInterval);
+  }, [showPQRST]);
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
@@ -333,6 +425,49 @@ export default function EcgFullPanel() {
         </div>
       )}
 
+      {/* PQRST text labels overlay - simpler approach */}
+      {showPQRST && (
+        <div className="absolute inset-0 pointer-events-none">
+          {visiblePQRST.map((point, index) => {
+            // Only show points from the most recent section of the ECG (e.g., last 20% of the screen)
+            // This ensures we only label the newest data coming in from the left
+            const isRecent = point.index > (sampleIndex.current - NUM_POINTS * 0.2 + NUM_POINTS) % NUM_POINTS && 
+                             point.index < (sampleIndex.current + NUM_POINTS * 0.1) % NUM_POINTS;
+            
+            if (isRecent) {
+              const xPercent = (point.index / NUM_POINTS) * 100;
+              const yOffset = 50 - (point.amplitude * getScaleFactor() * 50);
+              
+              let color;
+              switch (point.type) {
+                case 'P': color = 'text-orange-400'; break;
+                case 'Q': color = 'text-blue-400'; break;
+                case 'R': color = 'text-red-500'; break;
+                case 'S': color = 'text-cyan-400'; break;
+                case 'T': color = 'text-purple-400'; break;
+                default: color = 'text-white';
+              }
+              
+              return (
+                <div 
+                  key={`pqrst-${index}`}
+                  className={`absolute font-bold ${color}`}
+                  style={{
+                    left: `${xPercent}%`,
+                    top: `${yOffset}%`,
+                    transform: 'translate(-50%, -50%)',
+                    textShadow: '0 0 4px rgba(0,0,0,0.8)'
+                  }}
+                >
+                  {point.type}
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
+      )}
+
       {/* Control panel */}
       <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/40 to-transparent">
         <div className="flex items-center justify-center gap-4">
@@ -359,6 +494,19 @@ export default function EcgFullPanel() {
           >
             {peaksVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
             {peaksVisible ? 'Hide Peaks' : 'Show Peaks'}
+          </button>
+
+          {/* Add PQRST toggle button */}
+          <button 
+            onClick={() => setShowPQRST(!showPQRST)}
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
+              showPQRST 
+                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30' 
+                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+            } hover:scale-105 active:scale-95`}
+          >
+            <Activity className="w-5 h-5" />
+            {showPQRST ? 'Hide PQRST' : 'Show PQRST'}
           </button>
 
           <button 
