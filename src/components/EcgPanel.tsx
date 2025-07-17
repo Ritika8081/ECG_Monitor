@@ -6,6 +6,7 @@ import { BPMCalculator } from '../lib/bpmCalculator';
 import { NotchFilter, ECGFilter } from '../lib/filters';
 import { HRVCalculator } from '../lib/hrvCalculator';
 import { PQRSTDetector, PQRSTPoint } from '../lib/pqrstDetector';
+import { PanTompkinsDetector } from '../lib/panTompkinsDetector';
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -63,6 +64,7 @@ export default function EcgFullPanel() {
   const rLineRef = useRef<WebglLine | null>(null);
   const sLineRef = useRef<WebglLine | null>(null);
   const tLineRef = useRef<WebglLine | null>(null);
+  const panTompkins = useRef(new PanTompkinsDetector(SAMPLE_RATE));
 
   // Add this state to store currently visible PQRST points
   const [visiblePQRST, setVisiblePQRST] = useState<PQRSTPoint[]>([]);
@@ -165,8 +167,8 @@ export default function EcgFullPanel() {
       signalToNoiseRatio: maxAbs / (Math.sqrt(variance) || 1)
     });
 
-    // Skip peak detection if the signal is too weak or too noisy
-    if (maxAbs < 0.1 || variance < 0.0005) {
+    // Skip peak detection if the signal is too weak or too flat
+    if (maxAbs < 0.05 || variance < 0.0002) {
       console.log('Signal too weak or flat for detection, skipping');
       pqrstPoints.current = [];
       if (showPQRST) {
@@ -175,12 +177,26 @@ export default function EcgFullPanel() {
       return;
     }
 
-    // Detect peaks with the improved algorithm
-    const peaks = bpmCalculator.current.detectPeaks(dataCh0.current);
+    // Use Pan-Tompkins algorithm for peak detection
+    const peaks = panTompkins.current.detectQRS(dataCh0.current);
+
+    // Fall back to original algorithm if Pan-Tompkins doesn't find peaks
+    let usedPanTompkins = peaks.length > 0;
+
+    if (!usedPanTompkins) {
+      console.log('Pan-Tompkins found no peaks, trying original algorithm');
+      const originalPeaks = bpmCalculator.current.detectPeaks(dataCh0.current);
+      if (originalPeaks.length > 0) {
+        peaks.push(...originalPeaks);
+      }
+    }
+
+    // Generate visualization (same as before)
     peakData.current = bpmCalculator.current.generatePeakVisualization(dataCh0.current, peaks);
 
-    // Log more detailed peak info
+    // Log detailed peak info
     if (peaks.length > 0) {
+      console.log('Peak detection used Pan-Tompkins:', usedPanTompkins);
       console.log('Peak amplitudes:', peaks.map(idx => dataCh0.current[idx]));
       console.log('Peak indices:', peaks);
     }
@@ -306,7 +322,8 @@ export default function EcgFullPanel() {
       setConnected(true);
       setStartTime(Date.now());
       bpmCalculator.current.reset();
-      hrvCalculator.current.reset(); // Reset HRV calculator
+      hrvCalculator.current.reset();
+      panTompkins.current.reset(); // Reset Pan-Tompkins detector
 
     } catch (e) {
       console.error("BLE Connection failed:", e);
@@ -381,8 +398,8 @@ export default function EcgFullPanel() {
               </h1>
             </div>
             <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${connected
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+              : 'bg-red-500/20 text-red-400 border border-red-500/30'
               }`}>
               <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
               {connected ? 'Connected' : 'Disconnected'}
@@ -539,8 +556,8 @@ export default function EcgFullPanel() {
             onClick={connect}
             disabled={connected}
             className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${connected
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed'
-                : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 hover:scale-105 active:scale-95'
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed'
+              : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 hover:scale-105 active:scale-95'
               }`}
           >
             <Bluetooth className="w-5 h-5" />
@@ -550,8 +567,8 @@ export default function EcgFullPanel() {
           <button
             onClick={() => setPeaksVisible(!peaksVisible)}
             className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${peaksVisible
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
               } hover:scale-105 active:scale-95`}
           >
             {peaksVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
@@ -562,8 +579,8 @@ export default function EcgFullPanel() {
           <button
             onClick={() => setShowPQRST(!showPQRST)}
             className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${showPQRST
-                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
-                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+              ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
+              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
               } hover:scale-105 active:scale-95`}
           >
             <Activity className="w-5 h-5" />
@@ -573,8 +590,8 @@ export default function EcgFullPanel() {
           <button
             onClick={() => setShowHRV(!showHRV)}
             className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${showHRV
-                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
-                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+              ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
+              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
               } hover:scale-105 active:scale-95`}
           >
             <BarChart3 className="w-5 h-5" />
@@ -594,7 +611,7 @@ export default function EcgFullPanel() {
       {/* Signal quality indicator */}
       <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2 text-white">
         <div className={`w-3 h-3 rounded-full ${signalQuality === 'good' ? 'bg-green-500' :
-            signalQuality === 'poor' ? 'bg-yellow-500' : 'bg-red-500'
+          signalQuality === 'poor' ? 'bg-yellow-500' : 'bg-red-500'
           }`}></div>
         <span className="text-sm">
           {signalQuality === 'good' ? 'Good Signal' :
