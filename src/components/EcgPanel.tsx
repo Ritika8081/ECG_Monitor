@@ -25,6 +25,8 @@ export default function EcgFullPanel() {
   const [timer, setTimer] = useState("00:00");
   const [showHRV, setShowHRV] = useState(false);
   const [showPQRST, setShowPQRST] = useState(false);
+  const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
+
   type HRVMetrics = {
     sampleCount: number;
     assessment: {
@@ -73,31 +75,31 @@ export default function EcgFullPanel() {
     canvas.height = canvas.clientHeight * dpr;
 
     const wglp = new WebglPlot(canvas);
-    
+
     // Create ECG line (main signal)
     const line = new WebglLine(new ColorRGBA(0, 1, 0.2, 1), NUM_POINTS);
     line.arrangeX();
-    
+
     // Create peak line
     const peakLine = new WebglLine(new ColorRGBA(1, 0.2, 0.2, 1), NUM_POINTS);
     peakLine.arrangeX();
-    
+
     // Create PQRST lines
     const pLine = new WebglLine(new ColorRGBA(1, 0.7, 0, 1), NUM_POINTS); // Orange for P
     pLine.arrangeX();
-    
+
     const qLine = new WebglLine(new ColorRGBA(0.2, 0.6, 1, 1), NUM_POINTS); // Blue for Q
     qLine.arrangeX();
-    
+
     const rLine = new WebglLine(new ColorRGBA(1, 0, 0, 1), NUM_POINTS); // Red for R
     rLine.arrangeX();
-    
+
     const sLine = new WebglLine(new ColorRGBA(0, 0.8, 1, 1), NUM_POINTS); // Cyan for S
     sLine.arrangeX();
-    
+
     const tLine = new WebglLine(new ColorRGBA(0.8, 0.3, 1, 1), NUM_POINTS); // Purple for T
     tLine.arrangeX();
-    
+
     // Add all lines to the plot
     wglp.addLine(line);
     wglp.addLine(peakLine);
@@ -123,7 +125,7 @@ export default function EcgFullPanel() {
       for (let i = 0; i < NUM_POINTS; i++) {
         line.setY(i, dataCh0.current[i] * scale);
         peakLine.setY(i, peaksVisible ? peakData.current[i] : 0);
-        
+
         // Update PQRST lines if visible
         if (showPQRST) {
           pLine.setY(i, pLineRef.current?.getY(i) || 0);
@@ -151,28 +153,74 @@ export default function EcgFullPanel() {
 
   // Add this function to see what data we have
   function updatePeaks() {
+    // Add debug for signal diagnostics
+    const maxAbs = Math.max(...dataCh0.current.map(Math.abs));
+    const mean = dataCh0.current.reduce((sum, val) => sum + val, 0) / dataCh0.current.length;
+    const variance = dataCh0.current.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dataCh0.current.length;
+
+    console.log("Signal diagnostic:", {
+      maxAbs,
+      mean,
+      variance,
+      signalToNoiseRatio: maxAbs / (Math.sqrt(variance) || 1)
+    });
+
+    // Skip peak detection if the signal is too weak or too noisy
+    if (maxAbs < 0.1 || variance < 0.0005) {
+      console.log('Signal too weak or flat for detection, skipping');
+      pqrstPoints.current = [];
+      if (showPQRST) {
+        setVisiblePQRST([]);
+      }
+      return;
+    }
+
+    // Detect peaks with the improved algorithm
     const peaks = bpmCalculator.current.detectPeaks(dataCh0.current);
     peakData.current = bpmCalculator.current.generatePeakVisualization(dataCh0.current, peaks);
-    
-    // Detect PQRST waves
-    pqrstPoints.current = pqrstDetector.current.detectWaves(dataCh0.current, peaks, sampleIndex.current);
-    
-    // Update visible PQRST points when enabled
-    if (showPQRST) {
-      setVisiblePQRST([...pqrstPoints.current]);
+
+    // Log more detailed peak info
+    if (peaks.length > 0) {
+      console.log('Peak amplitudes:', peaks.map(idx => dataCh0.current[idx]));
+      console.log('Peak indices:', peaks);
     }
-    
+
+    // Try to detect PQRST waves
+    let pqrstDetected = false;
+
+    if (peaks.length >= 1) {
+      // Existing PQRST detection with peaks
+      pqrstPoints.current = pqrstDetector.current.detectWaves(dataCh0.current, peaks, sampleIndex.current);
+      pqrstDetected = pqrstPoints.current.length > 0;
+
+      if (showPQRST) {
+        setVisiblePQRST([...pqrstPoints.current]);
+      }
+    }
+
+    // If standard detection failed, try direct detection
+    if (!pqrstDetected) {
+      console.log('Standard detection failed, trying direct PQRST detection');
+      pqrstPoints.current = pqrstDetector.current.detectDirectWaves(dataCh0.current, sampleIndex.current);
+
+      if (showPQRST && pqrstPoints.current.length > 0) {
+        setVisiblePQRST([...pqrstPoints.current]);
+      } else {
+        setVisiblePQRST([]);
+      }
+    }
+
     // Debug logging
     console.log('Peaks detected:', peaks.length);
     console.log('PQRST points detected:', pqrstPoints.current.length);
     console.log('Data max:', Math.max(...dataCh0.current));
     console.log('Data min:', Math.min(...dataCh0.current));
-    
+
     // Extract RR intervals for HRV analysis
     if (peaks.length >= 2) {
       console.log('Extracting RR intervals from', peaks.length, 'peaks');
       hrvCalculator.current.extractRRFromPeaks(peaks, SAMPLE_RATE);
-      
+
       // Force update HRV metrics
       const metrics = hrvCalculator.current.getAllMetrics();
       console.log('HRV Metrics:', metrics);
@@ -199,7 +247,7 @@ export default function EcgFullPanel() {
         const sec = String(elapsed % 60).padStart(2, "0");
         setTimer(`${min}:${sec}`);
       }
-      
+
       const bpm = bpmCalculator.current.computeBPM(dataCh0.current);
       if (bpm) {
         setBpmDisplay(Math.round(bpm) + " BPM");
@@ -226,15 +274,15 @@ export default function EcgFullPanel() {
         alert("Web Bluetooth API is not supported in this browser.");
         return;
       }
-      const device = await (navigator as any).bluetooth.requestDevice({ 
-        filters: [{ namePrefix: "NPG" }], 
-        optionalServices: [SERVICE_UUID] 
+      const device = await (navigator as any).bluetooth.requestDevice({
+        filters: [{ namePrefix: "NPG" }],
+        optionalServices: [SERVICE_UUID]
       });
       const server = await device.gatt?.connect();
       const service = await server?.getPrimaryService(SERVICE_UUID);
       const controlChar = await service?.getCharacteristic(CONTROL_CHAR_UUID);
       const dataChar = await service?.getCharacteristic(DATA_CHAR_UUID);
-      
+
       await controlChar?.writeValue(new TextEncoder().encode("START"));
       await dataChar?.startNotifications();
 
@@ -249,7 +297,7 @@ export default function EcgFullPanel() {
             dataCh0.current[sampleIndex.current] = filtered;
             sampleIndex.current = (sampleIndex.current + 1) % NUM_POINTS;
           }
-          
+
           // Call updatePeaks to refresh the PQRST points with each new data packet
           updatePeaks();
         }
@@ -259,7 +307,7 @@ export default function EcgFullPanel() {
       setStartTime(Date.now());
       bpmCalculator.current.reset();
       hrvCalculator.current.reset(); // Reset HRV calculator
-      
+
     } catch (e) {
       console.error("BLE Connection failed:", e);
     }
@@ -273,16 +321,40 @@ export default function EcgFullPanel() {
   // Add this to keep PQRST labels moving with the wave
   useEffect(() => {
     if (!showPQRST) return;
-    
+
     // Update the PQRST labels position when the data is refreshed
     const pqrstUpdateInterval = setInterval(() => {
       if (pqrstPoints.current.length > 0 && showPQRST) {
         setVisiblePQRST([...pqrstPoints.current]);
       }
     }, 50); // Update at 20fps for smooth movement
-    
+
     return () => clearInterval(pqrstUpdateInterval);
   }, [showPQRST]);
+
+  // Add this effect to update signal quality
+  useEffect(() => {
+    const signalQualityInterval = setInterval(() => {
+      if (!connected) {
+        setSignalQuality('no-signal');
+        return;
+      }
+
+      // Calculate signal quality metrics
+      const maxAbs = Math.max(...dataCh0.current.map(Math.abs));
+      const variance = dataCh0.current.reduce((sum, val) => sum + Math.pow(val, 2), 0) / dataCh0.current.length;
+
+      if (maxAbs < 0.1 || variance < 0.001) {
+        setSignalQuality('no-signal');
+      } else if (maxAbs < 0.3 || variance < 0.01) {
+        setSignalQuality('poor');
+      } else {
+        setSignalQuality('good');
+      }
+    }, 1000);
+
+    return () => clearInterval(signalQualityInterval);
+  }, [connected]);
 
   return (
     <div className="relative w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
@@ -290,14 +362,14 @@ export default function EcgFullPanel() {
       <div className="absolute inset-0 opacity-10">
         <div className="h-full w-full bg-grid-pattern bg-[size:40px_40px]"></div>
       </div>
-      
+
       {/* Main canvas */}
-      <canvas 
-        ref={canvasRef} 
-        className="absolute inset-0 w-full h-full" 
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full"
         style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}
       />
-      
+
       {/* Header section */}
       <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/40 to-transparent ">
         <div className="flex items-center justify-between">
@@ -308,16 +380,15 @@ export default function EcgFullPanel() {
                 ECG Monitor
               </h1>
             </div>
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${
-              connected 
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${connected
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                 : 'bg-red-500/20 text-red-400 border border-red-500/30'
-            }`}>
+              }`}>
               <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
               {connected ? 'Connected' : 'Disconnected'}
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 px-4 py-2 bg-black/30 rounded-xl border border-white/10">
               <Timer className="w-4 h-4 text-blue-400" />
@@ -339,18 +410,18 @@ export default function EcgFullPanel() {
               <TrendingUp className="w-5 h-5 text-blue-400" />
               HRV Analysis
             </h3>
-            <button 
+            <button
               onClick={() => setShowHRV(false)}
               className="text-gray-400 hover:text-white"
             >
               ✕
             </button>
           </div>
-          
+
           {hrvMetrics && hrvMetrics.sampleCount > 0 ? (
             <>
               {/* HRV Status */}
-              <div className="mb-4 p-3 rounded-lg border" style={{ 
+              <div className="mb-4 p-3 rounded-lg border" style={{
                 backgroundColor: `${hrvMetrics.assessment.color}20`,
                 borderColor: `${hrvMetrics.assessment.color}40`
               }}>
@@ -424,13 +495,13 @@ export default function EcgFullPanel() {
           {visiblePQRST.map((point, index) => {
             // Only show points from the most recent section of the ECG (e.g., last 20% of the screen)
             // This ensures we only label the newest data coming in from the left
-            const isRecent = point.index > (sampleIndex.current - NUM_POINTS * 0.2 + NUM_POINTS) % NUM_POINTS && 
-                             point.index < (sampleIndex.current + NUM_POINTS * 0.1) % NUM_POINTS;
-            
+            const isRecent = point.index > (sampleIndex.current - NUM_POINTS * 0.2 + NUM_POINTS) % NUM_POINTS &&
+              point.index < (sampleIndex.current + NUM_POINTS * 0.1) % NUM_POINTS;
+
             if (isRecent) {
               const xPercent = (point.index / NUM_POINTS) * 100;
               const yOffset = 50 - (point.amplitude * getScaleFactor() * 50);
-              
+
               let color;
               switch (point.type) {
                 case 'P': color = 'text-orange-400'; break;
@@ -440,9 +511,9 @@ export default function EcgFullPanel() {
                 case 'T': color = 'text-purple-400'; break;
                 default: color = 'text-white';
               }
-              
+
               return (
-                <div 
+                <div
                   key={`pqrst-${index}`}
                   className={`absolute font-bold ${color}`}
                   style={{
@@ -464,57 +535,53 @@ export default function EcgFullPanel() {
       {/* Control panel */}
       <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/40 to-transparent">
         <div className="flex items-center justify-center gap-4">
-          <button 
+          <button
             onClick={connect}
             disabled={connected}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
-              connected 
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed' 
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${connected
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed'
                 : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 hover:scale-105 active:scale-95'
-            }`}
+              }`}
           >
             <Bluetooth className="w-5 h-5" />
             {connected ? 'Connected' : 'Connect Device'}
           </button>
-          
-          <button 
+
+          <button
             onClick={() => setPeaksVisible(!peaksVisible)}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
-              peaksVisible 
-                ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30' 
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${peaksVisible
+                ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
                 : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-            } hover:scale-105 active:scale-95`}
+              } hover:scale-105 active:scale-95`}
           >
             {peaksVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
             {peaksVisible ? 'Hide Peaks' : 'Show Peaks'}
           </button>
 
           {/* Add PQRST toggle button */}
-          <button 
+          <button
             onClick={() => setShowPQRST(!showPQRST)}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
-              showPQRST 
-                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30' 
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${showPQRST
+                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
                 : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-            } hover:scale-105 active:scale-95`}
+              } hover:scale-105 active:scale-95`}
           >
             <Activity className="w-5 h-5" />
             {showPQRST ? 'Hide PQRST' : 'Show PQRST'}
           </button>
 
-          <button 
+          <button
             onClick={() => setShowHRV(!showHRV)}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${
-              showHRV 
-                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30' 
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${showHRV
+                ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
                 : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-            } hover:scale-105 active:scale-95`}
+              } hover:scale-105 active:scale-95`}
           >
             <BarChart3 className="w-5 h-5" />
             {showHRV ? 'Hide HRV' : 'Show HRV'}
           </button>
 
-          <button 
+          <button
             onClick={getBPMStats}
             className="flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/30 hover:scale-105 active:scale-95"
           >
@@ -522,6 +589,17 @@ export default function EcgFullPanel() {
             Debug Stats
           </button>
         </div>
+      </div>
+
+      {/* Signal quality indicator */}
+      <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2 text-white">
+        <div className={`w-3 h-3 rounded-full ${signalQuality === 'good' ? 'bg-green-500' :
+            signalQuality === 'poor' ? 'bg-yellow-500' : 'bg-red-500'
+          }`}></div>
+        <span className="text-sm">
+          {signalQuality === 'good' ? 'Good Signal' :
+            signalQuality === 'poor' ? 'Poor Signal' : 'No Signal'}
+        </span>
       </div>
 
       {/* Pulse animation overlay */}
