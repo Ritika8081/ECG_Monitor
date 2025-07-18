@@ -28,6 +28,12 @@ export default function EcgFullPanel() {
   const [showPQRST, setShowPQRST] = useState(false);
   const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
 
+  // Update this state for physiological state
+  const [physioState, setPhysioState] = useState<{ state: string; confidence: number }>({ 
+    state: "Analyzing", 
+    confidence: 0 
+  });
+
   type HRVMetrics = {
     sampleCount: number;
     assessment: {
@@ -40,6 +46,8 @@ export default function EcgFullPanel() {
     pnn50: number;
     triangularIndex: number;
     lfhf: {
+      lf: number;
+      hf: number;
       ratio: number;
     };
     // Add any other fields returned by getAllMetrics()
@@ -277,6 +285,8 @@ export default function EcgFullPanel() {
         console.log('Timer HRV update:', metrics.sampleCount, 'samples');
         if (metrics.sampleCount > 0) {
           setHrvMetrics(metrics);
+          // Update this line to use the new method name
+          setPhysioState(hrvCalculator.current.getPhysiologicalState());
         }
       }
     }, 1000);
@@ -437,6 +447,40 @@ export default function EcgFullPanel() {
 
           {hrvMetrics && hrvMetrics.sampleCount > 0 ? (
             <>
+              {/* Physiological State (previously Mental State) */}
+              <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-gray-300">Physiological State:</span>
+                  <span className="font-bold text-lg" style={{ 
+                    color: 
+                      physioState.state === "High Stress" ? "#ef4444" : 
+                      physioState.state === "Relaxed" ? "#22c55e" : 
+                      physioState.state === "Focused" ? "#3b82f6" : 
+                      physioState.state === "Fatigue" ? "#f97316" : 
+                      physioState.state === "Analyzing" ? "#94a3b8" : "#94a3b8" 
+                  }}>
+                    {physioState.state}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-1.5">
+                  <div 
+                    className="h-1.5 rounded-full" 
+                    style={{ 
+                      width: `${physioState.confidence * 100}%`,
+                      backgroundColor: 
+                        physioState.state === "High Stress" ? "#ef4444" : 
+                        physioState.state === "Relaxed" ? "#22c55e" : 
+                        physioState.state === "Focused" ? "#3b82f6" : 
+                        physioState.state === "Fatigue" ? "#f97316" : 
+                        physioState.state === "Analyzing" ? "#94a3b8" : "#94a3b8" 
+                    }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Confidence: {(physioState.confidence * 100).toFixed(0)}%
+                </p>
+              </div>
+
               {/* HRV Status */}
               <div className="mb-4 p-3 rounded-lg border" style={{
                 backgroundColor: `${hrvMetrics.assessment.color}20`,
@@ -478,9 +522,25 @@ export default function EcgFullPanel() {
                 <h4 className="text-sm font-medium text-gray-300 mb-2">Frequency Domain</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between">
+                    <span className="text-gray-400 text-sm">LF Power:</span>
+                    <span className="font-mono text-blue-400 text-sm">
+                      {hrvMetrics.lfhf.lf.toFixed(2)} ms²
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400 text-sm">HF Power:</span>
+                    <span className="font-mono text-green-400 text-sm">
+                      {hrvMetrics.lfhf.hf.toFixed(2)} ms²
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
                     <span className="text-gray-400 text-sm">LF/HF Ratio:</span>
                     <span className="font-mono text-orange-400 text-sm">
                       {hrvMetrics.lfhf.ratio.toFixed(2)}
+                      <span className="text-xs ml-1 text-gray-400">
+                        {hrvMetrics.lfhf.ratio > 2.0 ? '(Sympathetic ↑)' : 
+                         hrvMetrics.lfhf.ratio < 0.5 ? '(Parasympathetic ↑)' : '(Balanced)'}
+                      </span>
                     </span>
                   </div>
                 </div>

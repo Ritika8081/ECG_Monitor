@@ -190,4 +190,142 @@ export class HRVCalculator {
   getRRIntervals(): number[] {
     return [...this.rrIntervals];
   }
+
+  /**
+   * Get mental state estimation
+   */
+  getMentalState(): { state: string; confidence: number } {
+    const metrics = this.getAllMetrics();
+    
+    // Default state if we don't have enough data
+    if (metrics.sampleCount < 30) {
+      return { state: "Analyzing", confidence: 0 };
+    }
+    
+    const RMSSD = metrics.rmssd;
+    const SDNN = metrics.sdnn;
+    const pNN50 = metrics.pnn50;
+    const LF_HF = metrics.lfhf.ratio;
+    const entropy = metrics.triangularIndex / 20; // Normalize as a proxy for entropy
+    const meanRR = this.rrIntervals.length > 0
+      ? this.rrIntervals.reduce((sum, rr) => sum + rr, 0) / this.rrIntervals.length
+      : 0;
+    const BPM = meanRR > 0 ? 60 / (meanRR / 1000) : 0; // Convert mean RR to BPM
+    
+    let state = "Neutral";
+    let confidence = 0.6; // Default confidence
+    
+    // Mental state detection algorithm
+    if (RMSSD < 25 && SDNN < 50 && BPM > 90) {
+      state = "High Stress";
+      confidence = 0.7 + (90 - RMSSD) / 100;
+    } else if (RMSSD > 40 && pNN50 > 30 && LF_HF < 1.5) {
+      state = "Relaxed";
+      confidence = 0.7 + (RMSSD - 40) / 100;
+    } else if (pNN50 < 10 && LF_HF > 2.0) {
+      state = "Focused";
+      confidence = 0.7 + (LF_HF - 2.0) / 3;
+    } else if (SDNN < 30 && entropy < 0.6) {
+      state = "Fatigue";
+      confidence = 0.7 + (0.6 - entropy) / 0.5;
+    } else {
+      state = "Neutral";
+      // Calculate confidence based on how close we are to any threshold
+      const stressDistance = Math.min(
+        Math.abs(RMSSD - 25) / 25,
+        Math.abs(SDNN - 50) / 50,
+        Math.abs(BPM - 90) / 90
+      );
+      const relaxedDistance = Math.min(
+        Math.abs(RMSSD - 40) / 40,
+        Math.abs(pNN50 - 30) / 30,
+        Math.abs(LF_HF - 1.5) / 1.5
+      );
+      const focusedDistance = Math.min(
+        Math.abs(pNN50 - 10) / 10,
+        Math.abs(LF_HF - 2.0) / 2.0
+      );
+      const fatigueDistance = Math.min(
+        Math.abs(SDNN - 30) / 30,
+        Math.abs(entropy - 0.6) / 0.6
+      );
+      
+      // Higher confidence when we're clearly in the neutral state
+      confidence = 0.6 + Math.min(stressDistance, relaxedDistance, focusedDistance, fatigueDistance) * 0.4;
+    }
+    
+    // Cap confidence at 0.95
+    confidence = Math.min(0.95, confidence);
+    
+    return { state, confidence };
+  }
+
+  /**
+   * Get physiological state estimation based on HRV metrics
+   */
+  getPhysiologicalState(): { state: string; confidence: number } {
+    const metrics = this.getAllMetrics();
+    
+    // Default state if we don't have enough data
+    if (metrics.sampleCount < 30) {
+      return { state: "Analyzing", confidence: 0 };
+    }
+    
+    const RMSSD = metrics.rmssd;
+    const SDNN = metrics.sdnn;
+    const pNN50 = metrics.pnn50;
+    const LF_HF = metrics.lfhf.ratio;
+    const entropy = metrics.triangularIndex / 20; // Normalize as a proxy for entropy
+    const meanRR = this.rrIntervals.length > 0
+      ? this.rrIntervals.reduce((sum, rr) => sum + rr, 0) / this.rrIntervals.length
+      : 0;
+    const BPM = meanRR > 0 ? 60 / (meanRR / 1000) : 0; // Convert mean RR to BPM
+    
+    let state = "Neutral";
+    let confidence = 0.6; // Default confidence
+    
+    // Physiological state detection algorithm
+    if (RMSSD < 25 && SDNN < 50 && BPM > 90) {
+      state = "High Stress";
+      confidence = 0.7 + (90 - RMSSD) / 100;
+    } else if (RMSSD > 40 && pNN50 > 30 && LF_HF < 1.5) {
+      state = "Relaxed";
+      confidence = 0.7 + (RMSSD - 40) / 100;
+    } else if (pNN50 < 10 && LF_HF > 2.0) {
+      state = "Focused";
+      confidence = 0.7 + (LF_HF - 2.0) / 3;
+    } else if (SDNN < 30 && entropy < 0.6) {
+      state = "Fatigue";
+      confidence = 0.7 + (0.6 - entropy) / 0.5;
+    } else {
+      state = "Neutral";
+      // Calculate confidence based on how close we are to any threshold
+      const stressDistance = Math.min(
+        Math.abs(RMSSD - 25) / 25,
+        Math.abs(SDNN - 50) / 50,
+        Math.abs(BPM - 90) / 90
+      );
+      const relaxedDistance = Math.min(
+        Math.abs(RMSSD - 40) / 40,
+        Math.abs(pNN50 - 30) / 30,
+        Math.abs(LF_HF - 1.5) / 1.5
+      );
+      const focusedDistance = Math.min(
+        Math.abs(pNN50 - 10) / 10,
+        Math.abs(LF_HF - 2.0) / 2.0
+      );
+      const fatigueDistance = Math.min(
+        Math.abs(SDNN - 30) / 30,
+        Math.abs(entropy - 0.6) / 0.6
+      );
+      
+      // Higher confidence when we're clearly in the neutral state
+      confidence = 0.6 + Math.min(stressDistance, relaxedDistance, focusedDistance, fatigueDistance) * 0.4;
+    }
+    
+    // Cap confidence at 0.95
+    confidence = Math.min(0.95, confidence);
+    
+    return { state, confidence };
+  }
 }
