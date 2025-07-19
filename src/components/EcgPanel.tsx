@@ -617,7 +617,8 @@ export default function EcgFullPanel() {
 
       {/* ECG Intervals Panel */}
       {showIntervals && (
-        <div className="absolute right-4 top-1/2 transform -translate-y-1/2 w-100 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white max-h-[min(700px,90vh)] overflow-y-auto">
+        <div className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[700px] 
+          bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-6 text-white z-10">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <Activity className="w-5 h-5 text-blue-400" />
@@ -631,195 +632,183 @@ export default function EcgFullPanel() {
             </button>
           </div>
           
-          {/* Add a simple explanation */}
-          <p className="text-sm text-gray-300 mb-4">
-            This panel analyzes your heartbeat timing patterns. These measurements can reveal important information about heart health.
-          </p>
-          
-          {/* Gender selector with explanation */}
-          <div className="mb-4">
-            <p className="text-sm text-gray-300 mb-2">
-              Select your gender (affects normal ranges):
-            </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setGender('male')}
-                className={`flex-1 py-2 rounded-lg text-sm ${
-                  gender === 'male' 
-                    ? 'bg-blue-500/30 border border-blue-500/60 text-blue-400' 
-                    : 'bg-gray-800/50 border border-gray-700 text-gray-400'
-                }`}
-              >
-                Male
-              </button>
-              <button
-                onClick={() => setGender('female')}
-                className={`flex-1 py-2 rounded-lg text-sm ${
-                  gender === 'female' 
-                    ? 'bg-pink-500/30 border border-pink-500/60 text-pink-400' 
-                    : 'bg-gray-800/50 border border-gray-700 text-gray-400'
-                }`}
-              >
-                Female
-              </button>
+          <div className="flex gap-4">
+            {/* Left column - description and gender */}
+            <div className="w-1/3">
+              {/* Add a simple explanation */}
+              <p className="text-sm text-gray-300 mb-4">
+                This panel analyzes your heartbeat timing patterns. These measurements can reveal important information about heart health.
+              </p>
+              
+              {/* Gender selector with explanation */}
+              <div className="mb-4">
+                <p className="text-sm text-gray-300 mb-2">
+                  Select your gender (affects normal ranges):
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setGender('male')}
+                    className={`flex-1 py-2 rounded-lg text-sm ${
+                      gender === 'male' 
+                        ? 'bg-blue-500/30 border border-blue-500/60 text-blue-400' 
+                        : 'bg-gray-800/50 border border-gray-700 text-gray-400'
+                    }`}
+                  >
+                    Male
+                  </button>
+                  <button
+                    onClick={() => setGender('female')}
+                    className={`flex-1 py-2 rounded-lg text-sm ${
+                      gender === 'female' 
+                        ? 'bg-pink-500/30 border border-pink-500/60 text-pink-400' 
+                        : 'bg-gray-800/50 border border-gray-700 text-gray-400'
+                    }`}
+                  >
+                    Female
+                  </button>
+                </div>
+              </div>
+              
+              {/* Disclaimer */}
+              <div className="mt-auto pt-4 text-xs text-gray-500 italic">
+                This is not a medical device. Do not use for diagnosis or treatment decisions.
+              </div>
             </div>
-          </div>
-
-          {ecgIntervals ? (
-            <div className="space-y-4">
-              {/* Heart Rate (BPM) */}
-              <div className="p-3 rounded-lg border border-white/20 bg-black/40">
-                <div className="flex items-center justify-between">
-                  <span className="text-gray-300">Heart Rate:</span>
-                  <span className={`font-mono font-bold ${
-                    ecgIntervals.status.bpm === 'normal' ? 'text-green-400' :
-                    ecgIntervals.status.bpm === 'bradycardia' ? 'text-yellow-400' :
-                    ecgIntervals.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
-                  }`}>
-                    {/* Use the BPM from the display or from the calculator if intervals BPM is zero */}
-                    {ecgIntervals.bpm > 0 ? ecgIntervals.bpm.toFixed(1) : 
-                      (bpmDisplay !== "-- BPM" ? bpmDisplay.split(" ")[0] : "70")} BPM
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1">
-                  How many times your heart beats per minute. Normal is 60-100 BPM.
-                </div>
-              </div>
-              
-              {/* RR Interval with explanation */}
-              <div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300 font-medium">Beat-to-Beat Interval:</span>
-                  <span className={`font-mono ${
-                    ecgIntervals.status.rr === 'normal' ? 'text-green-400' :
-                    ecgIntervals.status.rr === 'short' ? 'text-yellow-400' :
-                    ecgIntervals.status.rr === 'long' ? 'text-blue-400' : 'text-gray-400'
-                  }`}>
-                    {ecgIntervals.rr.toFixed(0)} ms
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1 mb-2">
-                  Time between heartbeats (R-R interval). Normal is 600-1000ms.
-                </div>
-              </div>
-              
-              {/* PR Interval with explanation */}
-              <div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300 font-medium">Conduction Time:</span>
-                  <span className={`font-mono ${
-                    ecgIntervals.status.pr === 'normal' ? 'text-green-400' :
-                    ecgIntervals.status.pr === 'short' ? 'text-yellow-400' :
-                    ecgIntervals.status.pr === 'long' ? 'text-red-400' : 'text-gray-400'
-                  }`}>
-                    {ecgIntervals.pr.toFixed(0)} ms
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1 mb-2">
-                  Time for electrical signal to travel from atria to ventricles (PR interval). Normal is 120-200ms.
-                </div>
-              </div>
-              
-              {/* QRS Duration with explanation */}
-              <div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300 font-medium">Activation Time:</span>
-                  <span className={`font-mono ${
-                    ecgIntervals.status.qrs === 'normal' ? 'text-green-400' :
-                    ecgIntervals.status.qrs === 'wide' ? 'text-red-400' : 'text-gray-400'
-                  }`}>
-                    {ecgIntervals.qrs.toFixed(0)} ms
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1 mb-2">
-                  Time for ventricles to activate (QRS duration). Should be under 120ms.
-                </div>
-              </div>
-              
-              {/* QT Interval with explanation */}
-              <div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300 font-medium">Total Electrical Cycle:</span>
-                  <span className={`font-mono ${
-                    ecgIntervals.status.qt === 'normal' ? 'text-green-400' :
-                    ecgIntervals.status.qt === 'prolonged' ? 'text-red-400' : 'text-gray-400'
-                  }`}>
-                    {ecgIntervals.qt.toFixed(0)} ms
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1 mb-2">
-                  Total time for ventricle activation and recovery (QT interval). Should be under {gender === 'male' ? '440' : '460'}ms.
-                </div>
-              </div>
-              
-              {/* QTc Interval with explanation */}
-              <div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-300 font-medium">Heart-Rate Adjusted Cycle:</span>
-                  <span className={`font-mono ${
-                    ecgIntervals.status.qtc === 'normal' ? 'text-green-400' :
-                    ecgIntervals.status.qtc === 'prolonged' ? 'text-red-400' : 'text-gray-400'
-                  }`}>
-                    {ecgIntervals.qtc.toFixed(0)} ms
-                  </span>
-                </div>
-                <div className="text-xs text-gray-400 mt-1 mb-2">
-                  QT interval adjusted for heart rate (QTc). Should be under {gender === 'male' ? '450' : '470'}ms.
-                </div>
-              </div>
-              
-              {/* Abnormality indicators - make more user-friendly */}
-              {ecgIntervals.status.pr === 'long' || ecgIntervals.status.qrs === 'wide' || ecgIntervals.status.qtc === 'prolonged' ? (
-                <div className="mt-4 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
-                  <h4 className="text-sm font-medium text-yellow-400 mb-2">Detected Pattern:</h4>
-                  <ul className="space-y-1 text-sm">
-                    {ecgIntervals.status.pr === 'long' && (
-                      <li className="flex items-center gap-2 text-yellow-400">
-                        <span>•</span>
-                        <span>Signal taking longer than usual to travel through the heart</span>
-                      </li>
-                    )}
-                    {ecgIntervals.status.qrs === 'wide' && (
-                      <li className="flex items-center gap-2 text-yellow-400">
-                        <span>•</span>
-                        <span>Heart chambers taking longer than usual to activate</span>
-                      </li>
-                    )}
-                    {ecgIntervals.status.qtc === 'prolonged' && (
-                      <li className="flex items-center gap-2 text-yellow-400">
-                        <span>•</span>
-                        <span>Heart electrical cycle lasting longer than typical</span>
-                      </li>
-                    )}
-                    <li className="text-xs text-gray-400 mt-2 italic">
-                      These patterns are sometimes seen in healthy people and don't necessarily indicate a problem.
-                    </li>
-                  </ul>
-                </div>
+            
+            {/* Right column - metrics */}
+            <div className="w-2/3">
+              {ecgIntervals ? (
+                <>
+                  {/* Heart Rate (BPM) - Full width */}
+                  <div className="p-3 rounded-lg border border-white/20 bg-black/40 mb-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-300">Heart Rate:</span>
+                      <span className={`font-mono font-bold text-xl ${
+                        ecgIntervals.status.bpm === 'normal' ? 'text-green-400' :
+                        ecgIntervals.status.bpm === 'bradycardia' ? 'text-yellow-400' :
+                        ecgIntervals.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
+                      }`}>
+                        {ecgIntervals.bpm > 0 ? ecgIntervals.bpm.toFixed(1) : 
+                          (bpmDisplay !== "-- BPM" ? bpmDisplay.split(" ")[0] : "0")} BPM
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      How many times your heart beats per minute. Normal is 60-100 BPM.
+                    </div>
+                  </div>
+                  
+                  {/* Two-column layout for metrics */}
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* RR Interval with explanation */}
+                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 text-sm">Beat-to-Beat:</span>
+                        <span className={`font-mono ${
+                          ecgIntervals.status.rr === 'normal' ? 'text-green-400' :
+                          ecgIntervals.status.rr === 'short' ? 'text-yellow-400' :
+                          ecgIntervals.status.rr === 'long' ? 'text-blue-400' : 'text-gray-400'
+                        }`}>
+                          {ecgIntervals.rr.toFixed(0)} ms
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        R-R interval: 600-1000ms normal
+                      </div>
+                    </div>
+                    
+                    {/* PR Interval with explanation */}
+                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 text-sm">Conduction:</span>
+                        <span className={`font-mono ${
+                          ecgIntervals.status.pr === 'normal' ? 'text-green-400' :
+                          ecgIntervals.status.pr === 'short' ? 'text-yellow-400' :
+                          ecgIntervals.status.pr === 'long' ? 'text-red-400' : 'text-gray-400'
+                        }`}>
+                          {ecgIntervals.pr.toFixed(0)} ms
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        PR interval: atria to ventricles
+                      </div>
+                    </div>
+                    
+                    {/* QRS Duration with explanation */}
+                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 text-sm">Activation:</span>
+                        <span className={`font-mono ${
+                          ecgIntervals.status.qrs === 'normal' ? 'text-green-400' :
+                          ecgIntervals.status.qrs === 'wide' ? 'text-red-400' : 'text-gray-400'
+                        }`}>
+                          {ecgIntervals.qrs.toFixed(0)} ms
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        QRS duration: ventricular activation
+                      </div>
+                    </div>
+                    
+                    {/* QTc Interval with explanation */}
+                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 text-sm">QTc:</span>
+                        <span className={`font-mono ${
+                          ecgIntervals.status.qtc === 'normal' ? 'text-green-400' :
+                          ecgIntervals.status.qtc === 'prolonged' ? 'text-red-400' : 'text-gray-400'
+                        }`}>
+                          {ecgIntervals.qtc.toFixed(0)} ms
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        Heart-rate adjusted QT interval
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Abnormality indicators - full width */}
+                  {ecgIntervals.status.pr === 'long' || ecgIntervals.status.qrs === 'wide' || ecgIntervals.status.qtc === 'prolonged' ? (
+                    <div className="mt-4 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
+                      <h4 className="text-sm font-medium text-yellow-400 mb-1">Patterns Detected:</h4>
+                      <ul className="space-y-1 text-xs">
+                        {ecgIntervals.status.pr === 'long' && (
+                          <li className="flex items-center gap-1 text-yellow-400">
+                            <span>•</span>
+                            <span>Prolonged conduction time</span>
+                          </li>
+                        )}
+                        {ecgIntervals.status.qrs === 'wide' && (
+                          <li className="flex items-center gap-1 text-yellow-400">
+                            <span>•</span>
+                            <span>Wide QRS complex</span>
+                          </li>
+                        )}
+                        {ecgIntervals.status.qtc === 'prolonged' && (
+                          <li className="flex items-center gap-1 text-yellow-400">
+                            <span>•</span>
+                            <span>Prolonged QTc interval</span>
+                          </li>
+                        )}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="mt-4 p-3 rounded-lg border border-green-500/30 bg-green-500/10">
+                      <h4 className="text-sm font-medium text-green-400">All Timing Patterns Normal</h4>
+                    </div>
+                  )}
+                  
+                  <div className="mt-3 text-xs text-gray-400 text-center">
+                    Based on your most recent complete heartbeat
+                  </div>
+                </>
               ) : (
-                <div className="mt-4 p-3 rounded-lg border border-green-500/30 bg-green-500/10">
-                  <h4 className="text-sm font-medium text-green-400 mb-2">All Timing Patterns Normal</h4>
-                  <p className="text-xs text-gray-400">
-                    Your heart's electrical timing falls within typical ranges.
-                  </p>
+                <div className="text-center text-gray-400 py-10">
+                  <div className="animate-spin w-10 h-10 border-2 border-blue-400 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <p>Analyzing your heart signal...</p>
+                  <p className="text-sm mt-2">We need a complete heartbeat for analysis</p>
                 </div>
               )}
-              
-              <div className="mt-4 pt-4 border-t border-white/20 text-xs text-gray-400">
-                Based on your most recent complete heartbeat
-              </div>
             </div>
-          ) : (
-            <div className="text-center text-gray-400 py-8">
-              <div className="animate-spin w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full mx-auto mb-4"></div>
-              <p>Analyzing your heart signal...</p>
-              <p className="text-sm mt-2">We need a complete heartbeat for analysis</p>
-            </div>
-          )}
-          
-          {/* Add a disclaimer */}
-          <div className="mt-6 pt-4 border-t border-white/20 text-xs text-gray-500 italic">
-            This is not a medical device. Do not use for diagnosis or treatment decisions.
           </div>
         </div>
       )}
