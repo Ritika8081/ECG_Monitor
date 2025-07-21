@@ -82,6 +82,15 @@ export default function EcgFullPanel() {
   // Add this state to store currently visible PQRST points
   const [visiblePQRST, setVisiblePQRST] = useState<PQRSTPoint[]>([]);
 
+  // Add this type definition with your other types
+  type STSegmentData = {
+    deviation: number;
+    status: 'normal' | 'elevation' | 'depression';
+  };
+
+  // Add this state inside your component
+  const [stSegmentData, setSTSegmentData] = useState<STSegmentData | null>(null);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -262,8 +271,18 @@ export default function EcgFullPanel() {
     if (pqrstPoints.current.length > 0) {
       const intervals = intervalCalculator.current.calculateIntervals(pqrstPoints.current);
       if (intervals) {
+        // Add ST segment analysis
+        const stAnalysis = analyzeSTSegment(pqrstPoints.current);
+        if (stAnalysis) {
+          setSTSegmentData(stAnalysis);
+          // Add ST data to intervals object if your ECGIntervals type supports it
+          // If your ECGIntervals type doesn't have st fields, you can modify it or use the separate state
+        }
         setEcgIntervals(intervals);
       }
+    } else if (peaks.length > 0) {
+      // If no PQRST but we have peaks, we could create fallback intervals here
+      setSTSegmentData(null);
     }
   }
 
@@ -430,6 +449,139 @@ export default function EcgFullPanel() {
         </ul>
       </div>
     );
+  };
+
+  // Add this function inside your EcgFullPanel component
+  const analyzeSTSegment = (pqrstPoints: PQRSTPoint[]): STSegmentData | null => {
+    // Find relevant points
+    const sPoint = pqrstPoints.find(p => p.type === 'S');
+    const tPoint = pqrstPoints.find(p => p.type === 'T');
+    const qPoint = pqrstPoints.find(p => p.type === 'Q');
+    
+    if (!sPoint || !tPoint || !qPoint) {
+      return null;
+    }
+    
+    // Find J-point (end of S-wave)
+    const jPointIndex = sPoint.index;
+    
+    // Get ST segment point (80ms after J-point)
+    const stPointIndex = jPointIndex + Math.floor(0.08 * SAMPLE_RATE);
+    
+    // Get baseline as PR segment level (or use isoelectric line)
+    const baseline = qPoint.amplitude;
+    
+    // Find ST point value (interpolate if needed)
+    let stValue;
+    const stPoint = pqrstPoints.find(p => p.index === stPointIndex);
+    if (stPoint) {
+      stValue = stPoint.amplitude;
+    } else {
+      // Interpolate between S and T if exact point not available
+      const ratio = (stPointIndex - sPoint.index) / (tPoint.index - sPoint.index);
+      stValue = sPoint.amplitude + ratio * (tPoint.amplitude - sPoint.amplitude);
+    }
+    
+    // Calculate ST deviation in mm (1mm = 0.1mV in standard ECG)
+    const deviation = (stValue - baseline) * 10;
+    
+    // Determine status
+    let status: 'normal' | 'elevation' | 'depression' = 'normal';
+    if (deviation >= 0.2) status = 'elevation';
+    else if (deviation <= -0.1) status = 'depression';
+    
+    return { deviation, status };
+  };
+
+  // Add this function inside your EcgFullPanel component
+  const generateSummaryReport = () => {
+    if (!ecgIntervals) {
+      alert("No ECG data available for report generation");
+      return;
+    }
+    
+    // Create CSV content
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "ECG Monitor Summary Report\n";
+    csvContent += `Generated on,${new Date().toLocaleString()}\n\n`;
+    
+    // Add patient info (gender since that's all we have)
+    csvContent += "Patient Information\n";
+    csvContent += `Gender,${gender === 'male' ? 'Male' : 'Female'}\n\n`;
+    
+    // Add heart rate and rhythm information
+    csvContent += "Vital Signs\n";
+    csvContent += `Heart Rate,${ecgIntervals.bpm.toFixed(1)} BPM\n`;
+    csvContent += `Heart Rate Status,${ecgIntervals.status.bpm}\n\n`;
+    
+    // Add ECG intervals
+    csvContent += "ECG Intervals\n";
+    csvContent += `RR Interval,${ecgIntervals.rr.toFixed(0)} ms\n`;
+    csvContent += `PR Interval,${ecgIntervals.pr.toFixed(0)} ms\n`;
+    csvContent += `QRS Duration,${ecgIntervals.qrs.toFixed(0)} ms\n`;
+    csvContent += `QT Interval,${ecgIntervals.qt ? ecgIntervals.qt.toFixed(0) : "N/A"} ms\n`;
+    csvContent += `QTc Interval,${ecgIntervals.qtc.toFixed(0)} ms\n`;
+    
+    // Add ST segment data if available
+    if (stSegmentData) {
+      csvContent += `ST Deviation,${stSegmentData.deviation.toFixed(2)} mm\n`;
+      csvContent += `ST Status,${stSegmentData.status}\n`;
+    }
+    
+    csvContent += "\nInterval Status\n";
+    csvContent += `PR Status,${ecgIntervals.status.pr}\n`;
+    csvContent += `QRS Status,${ecgIntervals.status.qrs}\n`;
+    csvContent += `QTc Status,${ecgIntervals.status.qtc}\n`;
+    
+    // Add HRV metrics if available
+    if (hrvMetrics && hrvMetrics.sampleCount > 0) {
+      csvContent += "\nHeart Rate Variability Analysis\n";
+      csvContent += `RMSSD,${hrvMetrics.rmssd.toFixed(1)} ms\n`;
+      csvContent += `SDNN,${hrvMetrics.sdnn.toFixed(1)} ms\n`;
+      csvContent += `pNN50,${hrvMetrics.pnn50.toFixed(1)}%\n`;
+      csvContent += `Triangular Index,${hrvMetrics.triangularIndex.toFixed(1)}\n`;
+      csvContent += `LF/HF Ratio,${hrvMetrics.lfhf.ratio.toFixed(2)}\n`;
+      
+      // Add physiological state
+      if (physioState) {
+        csvContent += `Physiological State,${physioState.state}\n`;
+        csvContent += `State Confidence,${(physioState.confidence * 100).toFixed(0)}%\n`;
+      }
+    }
+    
+    // Add findings section
+    csvContent += "\nPotential Findings\n";
+    
+    // Add abnormalities
+    const findings = [];
+    if (ecgIntervals.status.bpm === 'bradycardia') findings.push("Bradycardia (slow heart rate)");
+    if (ecgIntervals.status.bpm === 'tachycardia') findings.push("Tachycardia (fast heart rate)");
+    if (ecgIntervals.status.pr === 'long') findings.push("Prolonged PR interval - Possible 1st degree AV block");
+    if (ecgIntervals.status.qrs === 'wide') findings.push("Wide QRS complex - Possible bundle branch block");
+    if (ecgIntervals.status.qtc === 'prolonged') findings.push("Prolonged QTc interval - Increased arrhythmia risk");
+    if (stSegmentData?.status === 'elevation') findings.push("ST segment elevation - Possible myocardial injury");
+    if (stSegmentData?.status === 'depression') findings.push("ST segment depression - Possible ischemia");
+    
+    if (findings.length > 0) {
+      findings.forEach(finding => {
+        csvContent += `${finding}\n`;
+      });
+    } else {
+      csvContent += "No abnormalities detected\n";
+    }
+    
+    // Add disclaimer
+    csvContent += "\nDISCLAIMER: This is not a medical device. Do not use for diagnosis or treatment decisions.\n";
+    csvContent += "Analysis is based on a limited dataset and should be confirmed by a qualified healthcare professional.\n";
+    
+    // Create download link
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `ecg-report-${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   return (
@@ -766,6 +918,27 @@ export default function EcgFullPanel() {
                     </div>
                   </div>
                   
+                  {/* ST Segment data - added section */}
+                  {stSegmentData && (
+                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-300 text-sm">ST Segment:</span>
+                        <span className={`font-mono ${
+                          stSegmentData.status === 'normal' ? 'text-green-400' :
+                          stSegmentData.status === 'elevation' ? 'text-red-400' :
+                          'text-yellow-400'
+                        }`}>
+                          {stSegmentData.deviation.toFixed(2)} mm
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {stSegmentData.status === 'normal' ? 'Normal ST segment' :
+                         stSegmentData.status === 'elevation' ? 'ST elevation detected' :
+                         'ST depression detected'}
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* Abnormality indicators - full width */}
                   {ecgIntervals.status.pr === 'long' || ecgIntervals.status.qrs === 'wide' || ecgIntervals.status.qtc === 'prolonged' ? (
                     <div className="mt-4 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
@@ -918,12 +1091,19 @@ export default function EcgFullPanel() {
             {showIntervals ? 'Hide Intervals' : 'Show Intervals'}
           </button>
 
+
+          {/* Add this button to your control panel */}
           <button
-            onClick={getBPMStats}
-            className="flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/30 hover:scale-105 active:scale-95"
+            onClick={generateSummaryReport}
+            disabled={!ecgIntervals}
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 
+              ${!ecgIntervals
+                ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 hover:scale-105 active:scale-95'
+              }`}
           >
-            <Zap className="w-5 h-5" />
-            Debug Stats
+            <BarChart3 className="w-5 h-5" />
+            Export Report
           </button>
         </div>
       </div>
