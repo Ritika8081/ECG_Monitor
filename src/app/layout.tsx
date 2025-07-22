@@ -1,6 +1,8 @@
+// src/app/layout.tsx
 import type { Metadata } from "next";
 import "./globals.css";
-import NavBar from '../components/NavBar';
+import { ModelProvider } from "@/providers/ModelProvider";
+import NavBar from '@/components/NavBar';
 
 export const metadata: Metadata = {
   title: "ECG Monitor",
@@ -13,12 +15,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="overflow-hidden h-full">
-      <body className="h-full overflow-hidden">
-        <NavBar />
-        <div className="pt-16 h-[100] overflow-hidden">
-          {children}
-        </div>
+    <html lang="en" className="h-full">
+      <body className="h-full">
+        <ModelProvider>
+          <NavBar />
+          <div className="pt-16 h-[calc(100vh-4rem)]">
+            {children}
+          </div>
+        </ModelProvider>
       </body>
     </html>
   );
