@@ -1,0 +1,399 @@
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import * as tf from '@tensorflow/tfjs';
+import { classLabels } from '../lib/modelTrainer';
+
+export default function ModelInspector() {
+  const [model, setModel] = useState<tf.LayersModel | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [modelInfo, setModelInfo] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState<'structure' | 'weights' | 'test'>('structure');
+  const [testInputs, setTestInputs] = useState([
+    950, 60, 180, 100, 380, 450, 0.1, 30, 40, 2.0
+  ]);
+  const [prediction, setPrediction] = useState<any>(null);
+  
+  // Load model on component mount
+  useEffect(() => {
+    async function loadModel() {
+      setLoading(true);
+      try {
+        // Check if model exists in localStorage
+        const models = await tf.io.listModels();
+        if (!models['localstorage://ecg-disease-model']) {
+          setError('No model found in local storage. Please train the model first.');
+          setLoading(false);
+          return;
+        }
+        
+        // Load the model
+        const loadedModel = await tf.loadLayersModel('localstorage://ecg-disease-model');
+        setModel(loadedModel);
+        
+        // Extract model info
+        const layers = loadedModel.layers;
+        const summary = [];
+        
+        for (let i = 0; i < layers.length; i++) {
+          const layer = layers[i];
+          const config = layer.getConfig();
+          const weights = layer.getWeights();
+          const weightShapes = weights.map(w => w.shape);
+          
+          summary.push({
+            name: layer.name,
+            type: layer.getClassName(),
+            config,
+            weightShapes,
+            units: config.units,
+            activation: config.activation
+          });
+        }
+        
+        setModelInfo({
+          layers: summary,
+          totalLayers: layers.length,
+          inputShape: loadedModel.inputs[0].shape,
+          outputShape: loadedModel.outputs[0].shape
+        });
+        
+        setLoading(false);
+      } catch (err) {
+        console.error('Error loading model:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load model');
+        setLoading(false);
+      }
+    }
+    
+    loadModel();
+  }, []);
+  
+  // Make prediction with the model
+  const handlePredict = async () => {
+    if (!model) return;
+    
+    try {
+      // Convert inputs to tensor
+      const inputTensor = tf.tensor2d([testInputs], [1, 10]);
+      
+      // Run prediction
+      const outputTensor = model.predict(inputTensor) as tf.Tensor;
+      const probabilities = await outputTensor.data();
+      
+      // Get class with highest probability
+      const predictionArray = Array.from(probabilities);
+      const maxProbIndex = predictionArray.indexOf(Math.max(...predictionArray));
+      const predictedClass = classLabels[maxProbIndex];
+      
+      // Create result object with all class probabilities
+      const result = {
+        prediction: predictedClass,
+        confidence: predictionArray[maxProbIndex] * 100,
+        allProbabilities: classLabels.map((label, index) => ({
+          label,
+          probability: predictionArray[index] * 100
+        })).sort((a, b) => b.probability - a.probability)
+      };
+      
+      setPrediction(result);
+      
+      // Cleanup tensors
+      inputTensor.dispose();
+      outputTensor.dispose();
+    } catch (err) {
+      console.error('Prediction error:', err);
+      setError(err instanceof Error ? err.message : 'Prediction failed');
+    }
+  };
+  
+  // Handle input change for test values
+  const handleInputChange = (index: number, value: string) => {
+    const newInputs = [...testInputs];
+    newInputs[index] = parseFloat(value);
+    setTestInputs(newInputs);
+  };
+  
+  // Reset test inputs to default
+  const resetInputs = () => {
+    setTestInputs([950, 60, 180, 100, 380, 450, 0.1, 30, 40, 2.0]);
+    setPrediction(null);
+  };
+  
+  // Render loading state
+  if (loading) {
+    return (
+      <div className="bg-black/40 backdrop-blur-sm border border-white/20 rounded-xl p-6 h-full">
+        <h2 className="text-xl font-bold text-white mb-4">Model Inspector</h2>
+        <div className="flex items-center justify-center p-8">
+          <div className="w-6 h-6 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mr-2"></div>
+          <span className="text-blue-400">Loading model...</span>
+        </div>
+      </div>
+    );
+  }
+  
+  // Render error state
+  if (error) {
+    return (
+      <div className="bg-black/40 backdrop-blur-sm border border-white/20 rounded-xl p-6 h-full">
+        <h2 className="text-xl font-bold text-white mb-4">Model Inspector</h2>
+        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+          <span className="text-red-400">Error: {error}</span>
+        </div>
+      </div>
+    );
+  }
+  
+  // Render tabs and content
+  return (
+    <div className="bg-black/40 backdrop-blur-sm border border-white/20 rounded-xl p-6 h-full flex flex-col">
+      <h2 className="text-xl font-bold text-white mb-4">Model Inspector</h2>
+      
+      {/* Tabs */}
+      <div className="flex border-b border-white/20 mb-4">
+        <button 
+          className={`px-4 py-2 font-medium ${activeTab === 'structure' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400'}`}
+          onClick={() => setActiveTab('structure')}
+        >
+          Structure
+        </button>
+        <button 
+          className={`px-4 py-2 font-medium ${activeTab === 'weights' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400'}`}
+          onClick={() => setActiveTab('weights')}
+        >
+          Weights
+        </button>
+        <button 
+          className={`px-4 py-2 font-medium ${activeTab === 'test' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400'}`}
+          onClick={() => setActiveTab('test')}
+        >
+          Test Model
+        </button>
+      </div>
+      
+      {/* Tab Content - Make this scrollable */}
+      <div className="overflow-y-auto flex-1 pr-2 scrollable-content h-full max-h-[80vh]">
+        {/* Structure Tab */}
+        {activeTab === 'structure' && modelInfo && (
+          <div>
+            <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+              <h3 className="text-blue-400 font-medium mb-2">Model Summary</h3>
+              <div className="text-sm text-white">
+                <p>Total Layers: {modelInfo.totalLayers}</p>
+                <p>Input Shape: [{modelInfo.inputShape.slice(1).join(', ')}]</p>
+                <p>Output Shape: [{modelInfo.outputShape.slice(1).join(', ')}]</p>
+                <p>Output Classes: {classLabels.length}</p>
+              </div>
+            </div>
+            
+            <h3 className="text-white font-medium mb-2">Layers</h3>
+            {modelInfo.layers.map((layer: any, index: number) => (
+              <div key={index} className="mb-4 p-3 bg-black/20 border border-white/10 rounded-lg">
+                <div className="flex justify-between">
+                  <span className="text-white">{layer.name}</span>
+                  <span className="text-gray-400 text-sm">{layer.type}</span>
+                </div>
+                <div className="mt-2 text-sm">
+                  <p className="text-gray-300">Units: {layer.units}</p>
+                  <p className="text-gray-300">Activation: {layer.activation}</p>
+                  <p className="text-gray-300">
+                    Weight Shapes: {layer.weightShapes.map((shape: number[]) => 
+                      `[${shape.join(', ')}]`
+                    ).join(', ')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* Weights Tab */}
+        {activeTab === 'weights' && model && (
+          <div>
+            <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+              <h3 className="text-purple-400 font-medium mb-2">Weight Visualization</h3>
+              <p className="text-sm text-white">
+                This section shows the distribution of weights in each layer of the model.
+              </p>
+            </div>
+            
+            {model.layers.map((layer, index) => {
+              const weights = layer.getWeights();
+              if (weights.length === 0) return null;
+              
+              return (
+                <div key={index} className="mb-4 p-3 bg-black/20 border border-white/10 rounded-lg">
+                  <h4 className="text-white mb-2">{layer.name}</h4>
+                  
+                  {weights.map((weight, wIndex) => {
+                    // Get weight data
+                    const data = weight.dataSync();
+                    const min = Math.min(...Array.from(data));
+                    const max = Math.max(...Array.from(data));
+                    const avg = Array.from(data).reduce((a, b) => a + b, 0) / data.length;
+                    
+                    return (
+                      <div key={wIndex} className="mb-3">
+                        <p className="text-sm text-gray-400">
+                          {wIndex === 0 ? 'Weights' : 'Biases'} [{weight.shape.join('×')}]
+                        </p>
+                        
+                        {/* Weight statistics */}
+                        <div className="grid grid-cols-3 gap-2 mt-1 text-xs">
+                          <div className="p-1 bg-black/30 rounded">
+                            <span className="text-blue-400">Min: {min.toFixed(4)}</span>
+                          </div>
+                          <div className="p-1 bg-black/30 rounded">
+                            <span className="text-green-400">Avg: {avg.toFixed(4)}</span>
+                          </div>
+                          <div className="p-1 bg-black/30 rounded">
+                            <span className="text-red-400">Max: {max.toFixed(4)}</span>
+                          </div>
+                        </div>
+                        
+                        {/* Simple histogram (10 buckets) */}
+                        {data.length > 0 && (
+                          <div className="mt-2 h-10 flex items-end">
+                            {Array.from({ length: 10 }).map((_, i) => {
+                              const bucketMin = min + (max - min) * (i / 10);
+                              const bucketMax = min + (max - min) * ((i + 1) / 10);
+                              const bucketCount = Array.from(data).filter(
+                                v => v >= bucketMin && v < bucketMax
+                              ).length;
+                              const height = `${Math.max(5, (bucketCount / data.length) * 100)}%`;
+                              
+                              return (
+                                <div 
+                                  key={i} 
+                                  className="flex-1 mx-px" 
+                                  style={{ 
+                                    height, 
+                                    backgroundColor: `rgba(59, 130, 246, ${0.3 + (i / 10) * 0.7})` 
+                                  }}
+                                  title={`${bucketCount} values between ${bucketMin.toFixed(4)} and ${bucketMax.toFixed(4)}`}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
+        {/* Test Tab */}
+        {activeTab === 'test' && (
+          <div>
+            <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+              <h3 className="text-green-400 font-medium mb-2">Test Model</h3>
+              <p className="text-sm text-white">
+                Modify input values below and click "Predict" to test the model.
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              {testInputs.map((value, index) => (
+                <div key={index} className="mb-2">
+                  <label className="block text-sm text-gray-400 mb-1">
+                    {getInputLabel(index)}
+                  </label>
+                  <input 
+                    type="number" 
+                    value={value}
+                    onChange={(e) => handleInputChange(index, e.target.value)}
+                    className="w-full bg-black/30 text-white border border-white/20 rounded px-3 py-2"
+                    step="0.1"
+                  />
+                </div>
+              ))}
+            </div>
+            
+            <div className="flex gap-3 mb-6">
+              <button
+                onClick={handlePredict}
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg"
+              >
+                Predict
+              </button>
+              
+              <button
+                onClick={resetInputs}
+                className="px-6 py-2 bg-gray-700 hover:bg-gray-800 text-white font-medium rounded-lg"
+              >
+                Reset
+              </button>
+            </div>
+            
+            {/* Prediction Results */}
+            {prediction && (
+              <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                <h3 className="text-green-400 font-medium mb-3">Prediction Results</h3>
+                
+                <div className="mb-4 text-center">
+                  <div className="text-3xl font-bold text-white mb-1">
+                    {prediction.prediction}
+                  </div>
+                  <div className="text-green-400">
+                    {prediction.confidence.toFixed(2)}% confidence
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  {prediction.allProbabilities.map((item: any, index: number) => (
+                    <div key={index} className="flex items-center">
+                      <div className="w-32 text-sm text-white">{item.label}</div>
+                      <div className="flex-1 h-5 bg-black/40 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full rounded-full" 
+                          style={{ 
+                            width: `${item.probability}%`,
+                            backgroundColor: getColorForProbability(item.probability)
+                          }}
+                        />
+                      </div>
+                      <div className="w-16 text-right text-sm text-white ml-2">
+                        {item.probability.toFixed(1)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Helper functions
+function getInputLabel(index: number): string {
+  const labels = [
+    "RR Interval (ms)",
+    "Heart Rate (BPM)",
+    "PR Interval (ms)",
+    "QRS Duration (ms)",
+    "QT Interval (ms)",
+    "QTc Interval (ms)",
+    "ST Deviation (mm)",
+    "RMSSD (ms)",
+    "SDNN (ms)",
+    "LF/HF Ratio"
+  ];
+  return labels[index] || `Input ${index + 1}`;
+}
+
+function getColorForProbability(probability: number): string {
+  // Return a color based on probability percentage
+  if (probability > 80) return "#22c55e"; // green-500
+  if (probability > 60) return "#4ade80"; // green-400
+  if (probability > 40) return "#facc15"; // yellow-400
+  if (probability > 20) return "#f59e42"; // orange-400
+  return "#ef4444"; // red-500
+}

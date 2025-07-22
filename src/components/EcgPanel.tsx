@@ -8,6 +8,9 @@ import { HRVCalculator } from '../lib/hrvCalculator';
 import { PQRSTDetector, PQRSTPoint } from '../lib/pqrstDetector';
 import { PanTompkinsDetector } from '../lib/panTompkinsDetector';
 import { ECGIntervalCalculator, ECGIntervals } from '../lib/ecgIntervals';
+import * as tf from '@tensorflow/tfjs';
+import { checkModelExists } from '../lib/modelTester';
+import { classLabels } from '../lib/modelTrainer';
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -58,6 +61,13 @@ export default function EcgFullPanel() {
   const [hrvMetrics, setHrvMetrics] = useState<HRVMetrics | null>(null);
   const [ecgIntervals, setEcgIntervals] = useState<ECGIntervals | null>(null);
   const [gender, setGender] = useState<'male' | 'female'>('male');
+
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [ecgModel, setEcgModel] = useState<tf.LayersModel | null>(null);
+  const [modelPrediction, setModelPrediction] = useState<{
+    prediction: string;
+    confidence: number;
+  } | null>(null);
 
   const wglpRef = useRef<WebglPlot | null>(null);
   const lineRef = useRef<WebglLine | null>(null);
@@ -330,6 +340,25 @@ export default function EcgFullPanel() {
     intervalCalculator.current.setGender(gender);
   }, [gender]);
 
+  // Add this useEffect to load the model when the component mounts
+  useEffect(() => {
+    async function loadModel() {
+      try {
+        const exists = await checkModelExists();
+        if (exists) {
+          const model = await tf.loadLayersModel('localstorage://ecg-disease-model');
+          setEcgModel(model);
+          setModelLoaded(true);
+          console.log('ECG model loaded successfully');
+        }
+      } catch (err) {
+        console.error('Failed to load model:', err);
+      }
+    }
+    
+    loadModel();
+  }, []);
+
   async function connect() {
     try {
       // Check if navigator.bluetooth is available
@@ -377,6 +406,50 @@ export default function EcgFullPanel() {
       console.error("BLE Connection failed:", e);
     }
   }
+
+  // Add this function to make predictions
+  const analyzeCurrent = async () => {
+    if (!ecgModel || !ecgIntervals) return;
+    
+    try {
+      // Create input features array from current ECG data
+      const features = [
+        ecgIntervals.rr,
+        ecgIntervals.bpm,
+        ecgIntervals.pr,
+        ecgIntervals.qrs,
+        ecgIntervals.qt,
+        ecgIntervals.qtc,
+        stSegmentData?.deviation || 0,
+        hrvMetrics?.rmssd || 0,
+        hrvMetrics?.sdnn || 0,
+        hrvMetrics?.lfhf?.ratio || 0,
+      ];
+      
+      // Create tensor and make prediction
+      const inputTensor = tf.tensor2d([features], [1, 10]);
+      const outputTensor = ecgModel.predict(inputTensor) as tf.Tensor;
+      const probabilities = await outputTensor.data();
+      
+      // Get predicted class
+      const predArray = Array.from(probabilities);
+      const maxIndex = predArray.indexOf(Math.max(...predArray));
+      const predictedClass = classLabels[maxIndex];
+      const confidence = predArray[maxIndex] * 100;
+      
+      // Update state with prediction
+      setModelPrediction({
+        prediction: predictedClass,
+        confidence: confidence
+      });
+      
+      // Cleanup tensors
+      inputTensor.dispose();
+      outputTensor.dispose();
+    } catch (err) {
+      console.error('Prediction failed:', err);
+    }
+  };
 
   const getBPMStats = () => {
     console.log('BPM Stats:', bpmCalculator.current.getStats());
@@ -585,7 +658,7 @@ export default function EcgFullPanel() {
   };
 
   return (
-    <div className="relative w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
+    <div className="relative w-full h-[90vh] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ">
       {/* Grid background */}
       <div className="absolute inset-0 opacity-10">
         <div className="h-full w-full bg-grid-pattern bg-[size:40px_40px]"></div>
@@ -1091,8 +1164,7 @@ export default function EcgFullPanel() {
             {showIntervals ? 'Hide Intervals' : 'Show Intervals'}
           </button>
 
-
-          {/* Add this button to your control panel */}
+          {/* Export Report Button */}
           <button
             onClick={generateSummaryReport}
             disabled={!ecgIntervals}
@@ -1104,6 +1176,20 @@ export default function EcgFullPanel() {
           >
             <BarChart3 className="w-5 h-5" />
             Export Report
+          </button>
+
+          {/* AI Analysis Button */}
+          <button
+            onClick={analyzeCurrent}
+            disabled={!modelLoaded || !ecgIntervals}
+            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 
+              ${!modelLoaded || !ecgIntervals
+                ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 hover:scale-105 active:scale-95'
+              }`}
+          >
+            <span className="w-5 h-5 flex items-center justify-center">AI</span>
+            Analyze ECG
           </button>
         </div>
       </div>
@@ -1126,6 +1212,36 @@ export default function EcgFullPanel() {
           <div className="absolute top-0 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
         </div>
       </div>
+
+      {/* AI Prediction Result - repositioned */}
+      {modelPrediction && (
+        <div className="absolute top-16 right-4 bg-black/60 backdrop-blur-sm border border-white/20 rounded-lg p-4 text-white max-w-xs z-20">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-medium">AI Analysis</h3>
+            <button 
+              onClick={() => setModelPrediction(null)}
+              className="text-gray-400 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+          <div className={`text-2xl font-bold mb-1 ${
+            modelPrediction.prediction === "Bradycardia" || modelPrediction.prediction === "Tachycardia" ? "text-yellow-400" :
+            modelPrediction.prediction === "STEMI" || modelPrediction.prediction === "MyocardialIschemia" ? "text-red-400" :
+            modelPrediction.prediction === "AFib" ? "text-orange-400" :
+            modelPrediction.prediction === "BundleBranchBlock" ? "text-blue-400" :
+            modelPrediction.prediction === "Normal" ? "text-green-400" : "text-white"
+          }`}>
+            {modelPrediction.prediction}
+          </div>
+          <div className="text-sm text-gray-300">
+            Confidence: {modelPrediction.confidence.toFixed(1)}%
+          </div>
+          <div className="mt-2 text-xs text-gray-400">
+            <p>This is an AI-based analysis and should be confirmed by a healthcare professional.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
