@@ -128,42 +128,7 @@ export default function HomePage() {
         </div>
       )}
       
-      {/* Control panel */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/40 to-transparent">
-        <div className="flex items-center justify-center gap-4">
-          {/* Your other ECG control buttons */}
-          
-          {/* AI Analysis Button */}
-          <button
-            onClick={toggleAutoAnalyze}
-            disabled={modelLoading || !connected}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 
-              ${modelLoading || !connected
-                ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                : autoAnalyze
-                  ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                  : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
-              } hover:scale-105 active:scale-95`}
-          >
-            <span className="w-5 h-5 flex items-center justify-center">{autoAnalyze ? '⏹️' : '🔄'}</span>
-            {autoAnalyze ? 'Stop Analysis' : 'Auto Analyze'}
-          </button>
-          
-          {/* One-time Analysis Button */}
-          <button
-            onClick={analyzeCurrent}
-            disabled={modelLoading || !connected}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 
-              ${modelLoading || !connected
-                ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 hover:scale-105 active:scale-95'
-              }`}
-          >
-            <Activity className="w-5 h-5" />
-            Analyze ECG
-          </button>
-        </div>
-      </div>
+     
     </div>
   );
 }

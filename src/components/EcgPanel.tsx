@@ -32,7 +32,8 @@ export default function EcgFullPanel() {
   const [showPQRST, setShowPQRST] = useState(false);
   const [showIntervals, setShowIntervals] = useState(false); // Add this state
   const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
-
+  const [sliderOpen, setSliderOpen] = useState(false);
+  
   // Update this state for physiological state
   const [physioState, setPhysioState] = useState<{ state: string; confidence: number }>({ 
     state: "Analyzing", 
@@ -68,6 +69,21 @@ export default function EcgFullPanel() {
     prediction: string;
     confidence: number;
   } | null>(null);
+
+  // Auto Analyze state and toggle function
+  const [autoAnalyze, setAutoAnalyze] = useState(false);
+  const toggleAutoAnalyze = () => setAutoAnalyze((prev) => !prev);
+
+  // Effect to run analyzeCurrent automatically if autoAnalyze is enabled
+  useEffect(() => {
+    if (!autoAnalyze) return;
+    if (!modelLoaded || !ecgIntervals) return;
+    const interval = setInterval(() => {
+      analyzeCurrent();
+    }, 5000); // Run every 5 seconds
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAnalyze, modelLoaded, ecgIntervals]);
 
   const wglpRef = useRef<WebglPlot | null>(null);
   const lineRef = useRef<WebglLine | null>(null);
@@ -703,6 +719,217 @@ export default function EcgFullPanel() {
         </div>
       </div>
 
+      {/* Improved Fixed Sidebar */}
+      <div className="fixed left-0 top-0 h-full z-30 flex items-center">
+        <div 
+          className="group h-full py-6 bg-black/50 backdrop-blur-md border-r border-white/10 flex flex-col items-center justify-center transition-all duration-300 hover:w-[240px] w-16"
+        >
+          {/* Connect Device Button */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button
+                  onClick={connected ? undefined : connect}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    connected 
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed' 
+                      : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
+                  }`}
+                  title={connected ? 'Connected' : 'Connect Device'}
+                >
+                  <Bluetooth className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${connected ? 'text-green-400' : 'text-blue-400'}`}>
+                  {connected ? 'Connected' : 'Connect Device'}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Peaks Button */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button 
+                  onClick={() => setPeaksVisible(!peaksVisible)}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    peaksVisible
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                  }`}
+                  title={peaksVisible ? 'Hide Peaks' : 'Show Peaks'}
+                >
+                  {peaksVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${peaksVisible ? 'text-green-400' : 'text-gray-400'}`}>
+                  {peaksVisible ? 'Hide Peaks' : 'Show Peaks'}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* PQRST Button */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button 
+                  onClick={() => setShowPQRST(!showPQRST)}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    showPQRST
+                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
+                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                  }`}
+                  title={showPQRST ? 'Hide PQRST' : 'Show PQRST'}
+                >
+                  <Activity className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${showPQRST ? 'text-orange-400' : 'text-gray-400'}`}>
+                  {showPQRST ? 'Hide PQRST' : 'Show PQRST'}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* HRV Button */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button 
+                  onClick={() => setShowHRV(!showHRV)}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    showHRV
+                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
+                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                  }`}
+                  title={showHRV ? 'Hide HRV' : 'Show HRV'}
+                >
+                  <TrendingUp className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${showHRV ? 'text-purple-400' : 'text-gray-400'}`}>
+                  {showHRV ? 'Hide HRV' : 'Show HRV'}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Intervals Button */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button 
+                  onClick={() => setShowIntervals(!showIntervals)}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    showIntervals
+                      ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
+                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                  }`}
+                  title={showIntervals ? 'Hide Intervals' : 'Show Intervals'}
+                >
+                  <Activity className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${showIntervals ? 'text-blue-400' : 'text-gray-400'}`}>
+                  {showIntervals ? 'Hide Intervals' : 'Show Intervals'}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Export Report Button */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button 
+                  onClick={!ecgIntervals ? undefined : generateSummaryReport}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    !ecgIntervals
+                      ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                      : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                  }`}
+                  title="Export Report"
+                >
+                  <BarChart3 className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${!ecgIntervals ? 'text-gray-400' : 'text-green-400'}`}>
+                  Export Report
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Analyze ECG Button (One-time analysis) */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button 
+                  onClick={!modelLoaded || !connected ? undefined : analyzeCurrent}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    !modelLoaded || !connected
+                      ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                      : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
+                  }`}
+                  title="Analyze ECG"
+                >
+                  <Activity className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${!modelLoaded || !connected ? 'text-gray-400' : 'text-blue-400'}`}>
+                  Analyze ECG
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* Auto Analyze Button (Continuous analysis) */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button 
+                  onClick={!modelLoaded || !connected ? undefined : toggleAutoAnalyze}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                    !modelLoaded || !connected
+                      ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                      : autoAnalyze
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                        : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
+                  }`}
+                  title={autoAnalyze ? 'Stop Analysis' : 'Auto Analyze'}
+                >
+                  {autoAnalyze ? (
+                    <span className="w-5 h-5 flex items-center justify-center">⏹️</span>
+                  ) : (
+                    <span className="w-5 h-5 flex items-center justify-center">🔄</span>
+                  )}
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${
+                  !modelLoaded || !connected 
+                    ? 'text-gray-400' 
+                    : autoAnalyze 
+                      ? 'text-green-400' 
+                      : 'text-purple-400'
+                }`}>
+                  {autoAnalyze ? 'Stop Analysis' : 'Auto Analyze'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* HRV Panel */}
       {showHRV && (
         <div className="absolute left-4 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white">
@@ -1102,152 +1329,7 @@ export default function EcgFullPanel() {
         </div>
       )}
 
-      {/* Control panel */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/40 to-transparent">
-        <div className="flex items-center justify-center gap-4">
-          <button
-            onClick={connect}
-            disabled={connected}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${connected
-              ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed'
-              : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30 hover:scale-105 active:scale-95'
-              }`}
-          >
-            <Bluetooth className="w-5 h-5" />
-            {connected ? 'Connected' : 'Connect Device'}
-          </button>
-
-          <button
-            onClick={() => setPeaksVisible(!peaksVisible)}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${peaksVisible
-              ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-              } hover:scale-105 active:scale-95`}
-          >
-            {peaksVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
-            {peaksVisible ? 'Hide Peaks' : 'Show Peaks'}
-          </button>
-
-          {/* Add PQRST toggle button */}
-          <button
-            onClick={() => setShowPQRST(!showPQRST)}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${showPQRST
-              ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
-              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-              } hover:scale-105 active:scale-95`}
-          >
-            <Activity className="w-5 h-5" />
-            {showPQRST ? 'Hide PQRST' : 'Show PQRST'}
-          </button>
-
-          {/* HRV Analysis Button */}
-          <button
-            onClick={() => setShowHRV(!showHRV)}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${showHRV
-              ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
-              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-              } hover:scale-105 active:scale-95`}
-          >
-            <TrendingUp className="w-5 h-5" />
-            {showHRV ? 'Hide HRV' : 'Show HRV'}
-          </button>
-
-          {/* ECG Intervals Button */}
-          <button
-            onClick={() => setShowIntervals(!showIntervals)}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 ${showIntervals
-              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
-              : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-              } hover:scale-105 active:scale-95`}
-          >
-            <Activity className="w-5 h-5" />
-            {showIntervals ? 'Hide Intervals' : 'Show Intervals'}
-          </button>
-
-          {/* Export Report Button */}
-          <button
-            onClick={generateSummaryReport}
-            disabled={!ecgIntervals}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 
-              ${!ecgIntervals
-                ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 hover:scale-105 active:scale-95'
-              }`}
-          >
-            <BarChart3 className="w-5 h-5" />
-            Export Report
-          </button>
-
-          {/* AI Analysis Button */}
-          <button
-            onClick={analyzeCurrent}
-            disabled={!modelLoaded || !ecgIntervals}
-            className={`flex items-center gap-3 px-6 py-3 rounded-xl font-medium transition-all duration-200 
-              ${!modelLoaded || !ecgIntervals
-                ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30 hover:scale-105 active:scale-95'
-              }`}
-          >
-            <span className="w-5 h-5 flex items-center justify-center">AI</span>
-            Analyze ECG
-          </button>
-        </div>
-      </div>
-
-      {/* Signal quality indicator */}
-      <div className="absolute top-4 left-4 flex items-center gap-2 bg-black/60 backdrop-blur-sm rounded-lg px-3 py-2 text-white">
-        <div className={`w-3 h-3 rounded-full ${signalQuality === 'good' ? 'bg-green-500' :
-          signalQuality === 'poor' ? 'bg-yellow-500' : 'bg-red-500'
-          }`}></div>
-        <span className="text-sm">
-          {signalQuality === 'good' ? 'Good Signal' :
-            signalQuality === 'poor' ? 'Poor Signal' : 'No Signal'}
-        </span>
-      </div>
-
-      {/* Pulse animation overlay */}
-      <div className="absolute top-4 right-4 pointer-events-none">
-        <div className="relative">
-          <div className="w-4 h-4 bg-red-500 rounded-full animate-ping"></div>
-          <div className="absolute top-0 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
-        </div>
-      </div>
-
-      {/* AI Prediction Result - repositioned */}
-      {modelPrediction && (
-        <div className="absolute top-16 right-4 bg-black/60 backdrop-blur-sm border border-white/20 rounded-lg p-4 text-white max-w-xs z-20">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-medium">AI Analysis</h3>
-            <button 
-              onClick={() => setModelPrediction(null)}
-              className="text-gray-400 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-          <div className={`text-2xl font-bold mb-1 ${
-            modelPrediction.prediction === "Bradycardia" || modelPrediction.prediction === "Tachycardia" ? "text-yellow-400" :
-            modelPrediction.prediction === "STEMI" || modelPrediction.prediction === "MyocardialIschemia" ? "text-red-400" :
-            modelPrediction.prediction === "AFib" ? "text-orange-400" :
-            modelPrediction.prediction === "BundleBranchBlock" ? "text-blue-400" :
-            modelPrediction.prediction === "Normal" ? "text-green-400" : "text-white"
-          }`}>
-            {modelPrediction.prediction}
-          </div>
-          <div className="text-sm text-gray-300">
-            Confidence: {modelPrediction.confidence.toFixed(1)}%
-          </div>
-          <div className="mt-2 text-xs text-gray-400">
-            <p>This is an AI-based analysis and should be confirmed by a healthcare professional.</p>
-          </div>
-        </div>
-      )}
+    
     </div>
   );
-}
-
-
-
-function calculateIntervals(pqrstPoints: any, arg1: any, externalBpm: any, arg3: number) {
-  throw new Error("Function not implemented.");
 }
