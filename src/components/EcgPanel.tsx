@@ -673,8 +673,27 @@ export default function EcgFullPanel() {
     document.body.removeChild(link);
   };
 
+  const [showAIAnalysis, setShowAIAnalysis] = useState(false); // Add this state to control AI Analysis panel visibility
+
+  // Effect to run analyzeCurrent automatically when panel is visible
+  useEffect(() => {
+    if (!showAIAnalysis) return;
+    if (!modelLoaded || !ecgIntervals) return;
+    
+    // Run initial analysis
+    analyzeCurrent();
+    
+    // Set up auto-refresh
+    const interval = setInterval(() => {
+      analyzeCurrent();
+    }, 5000); // Run every 5 seconds
+    
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAIAnalysis, modelLoaded, ecgIntervals]);
+
   return (
-    <div className="relative w-full h-[90vh] bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ">
+    <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ">
       {/* Grid background */}
       <div className="absolute inset-0 opacity-10">
         <div className="h-full w-full bg-grid-pattern bg-[size:40px_40px]"></div>
@@ -686,38 +705,6 @@ export default function EcgFullPanel() {
         className="absolute inset-0 w-full h-full"
         style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}
       />
-
-      {/* Header section */}
-      <div className="absolute top-0 left-0 right-0 p-6 bg-gradient-to-b from-black/40 to-transparent ">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-white">
-              <Activity className="w-6 h-6 text-red-400" />
-              <h1 className="text-xl font-bold bg-gradient-to-r from-red-400 to-pink-400 bg-clip-text text-transparent">
-                ECG Monitor
-              </h1>
-            </div>
-            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${connected
-              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
-              : 'bg-red-500/20 text-red-400 border border-red-500/30'
-              }`}>
-              <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-400'} animate-pulse`} />
-              {connected ? 'Connected' : 'Disconnected'}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 px-4 py-2 bg-black/30 rounded-xl border border-white/10">
-              <Timer className="w-4 h-4 text-blue-400" />
-              <span className="text-white font-mono text-lg">{timer}</span>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-black/30 rounded-xl border border-white/10">
-              <Heart className="w-5 h-5 text-red-400 animate-pulse" />
-              <span className="text-red-400 font-bold text-xl">{bpmDisplay}</span>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Improved Fixed Sidebar */}
       <div className="fixed left-0 top-0 h-full z-30 flex items-center">
@@ -868,61 +855,33 @@ export default function EcgFullPanel() {
             </div>
           </div>
           
-          {/* Analyze ECG Button (One-time analysis) */}
+          {/* AI Analysis Button */}
           <div className="relative w-full mb-5">
             <div className="flex">
               <div className="w-16 flex justify-center">
                 <button 
-                  onClick={!modelLoaded || !connected ? undefined : analyzeCurrent}
+                  onClick={() => {
+                    // If we're turning on the analysis and model is loaded
+                    if (!showAIAnalysis && modelLoaded && connected) {
+                      analyzeCurrent(); // Run analysis immediately when showing
+                      setShowAIAnalysis(true);
+                    } else {
+                      setShowAIAnalysis(!showAIAnalysis); // Just toggle visibility
+                    }
+                  }}
                   className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    !modelLoaded || !connected
-                      ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                      : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
+                    showAIAnalysis
+                      ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/30'
+                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
                   }`}
-                  title="Analyze ECG"
+                  title={showAIAnalysis ? 'Hide AI Analysis' : 'Show AI Analysis'}
                 >
-                  <Activity className="w-5 h-5" />
+                  <Zap className="w-5 h-5" />
                 </button>
               </div>
               <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
-                <span className={`text-sm font-medium ${!modelLoaded || !connected ? 'text-gray-400' : 'text-blue-400'}`}>
-                  Analyze ECG
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Auto Analyze Button (Continuous analysis) */}
-          <div className="relative w-full mb-5">
-            <div className="flex">
-              <div className="w-16 flex justify-center">
-                <button 
-                  onClick={!modelLoaded || !connected ? undefined : toggleAutoAnalyze}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    !modelLoaded || !connected
-                      ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                      : autoAnalyze
-                        ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                        : 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
-                  }`}
-                  title={autoAnalyze ? 'Stop Analysis' : 'Auto Analyze'}
-                >
-                  {autoAnalyze ? (
-                    <span className="w-5 h-5 flex items-center justify-center">⏹️</span>
-                  ) : (
-                    <span className="w-5 h-5 flex items-center justify-center">🔄</span>
-                  )}
-                </button>
-              </div>
-              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
-                <span className={`text-sm font-medium ${
-                  !modelLoaded || !connected 
-                    ? 'text-gray-400' 
-                    : autoAnalyze 
-                      ? 'text-green-400' 
-                      : 'text-purple-400'
-                }`}>
-                  {autoAnalyze ? 'Stop Analysis' : 'Auto Analyze'}
+                <span className={`text-sm font-medium ${showAIAnalysis ? 'text-yellow-400' : 'text-gray-400'}`}>
+                  {showAIAnalysis ? 'Hide AI Analysis' : 'Show AI Analysis'}
                 </span>
               </div>
             </div>
@@ -1064,6 +1023,65 @@ export default function EcgFullPanel() {
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {/* AI Prediction Results Panel */}
+      {modelPrediction && showAIAnalysis && (
+        <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Zap className="w-5 h-5 text-yellow-400" />
+              AI Analysis
+            </h3>
+            <button
+              onClick={() => setShowAIAnalysis(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              ✕
+            </button>
+          </div>
+          
+          <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-sm text-gray-300">ECG Classification:</span>
+              <span className="font-bold text-lg" style={{ 
+                color: 
+                  modelPrediction.prediction === "Normal" ? "#22c55e" : 
+                  modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444" 
+              }}>
+                {modelPrediction.prediction}
+              </span>
+            </div>
+            <div className="w-full bg-gray-700 rounded-full h-1.5">
+              <div 
+                className="h-1.5 rounded-full" 
+                style={{ 
+                  width: `${modelPrediction.confidence}%`,
+                  backgroundColor: 
+                    modelPrediction.prediction === "Normal" ? "#22c55e" : 
+                    modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444" 
+                }}
+              ></div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Confidence: {modelPrediction.confidence.toFixed(1)}%
+            </p>
+          </div>
+          
+          {modelPrediction.prediction !== "Normal" && modelPrediction.prediction !== "Analyzing" && (
+            <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
+              <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
+              <p className="text-sm text-gray-300">
+                The AI model has detected patterns that may indicate {modelPrediction.prediction.toLowerCase()}.
+                Please consult with a healthcare professional for proper evaluation.
+              </p>
+            </div>
+          )}
+          
+          <div className="mt-4 text-xs text-gray-500 italic">
+            This is not a diagnostic tool. Results should be confirmed by medical professionals.
+          </div>
         </div>
       )}
 

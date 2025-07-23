@@ -36,7 +36,8 @@ export default function DocsPage() {
                   <li>Train the model using the "Train Model" button</li>
                   <li>Inspect the model structure and weights</li>
                   <li>Return to the <Link href="/" className="text-blue-400 hover:underline">ECG Monitor</Link></li>
-                  <li>Use the "Analyze ECG" button to get predictions</li>
+                  <li>Connect your ECG device using the Bluetooth button</li>
+                  <li>Toggle the "AI Analysis" button to see real-time predictions</li>
                 </ol>
               </div>
             </div>
@@ -108,6 +109,45 @@ export default function DocsPage() {
                   <li><span className="text-blue-400">RMSSD:</span> Root mean square of successive RR interval differences (ms)</li>
                   <li><span className="text-blue-400">SDNN:</span> Standard deviation of NN intervals (ms)</li>
                   <li><span className="text-blue-400">LF/HF Ratio:</span> Ratio of low-frequency to high-frequency power</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-black/40 backdrop-blur-sm border border-white/20 rounded-xl p-6 mt-8">
+            <h2 className="text-2xl font-bold text-white mb-4">AI Analysis Features</h2>
+            <p className="text-gray-300 mb-4">
+              The application provides several AI-powered analysis tools:
+            </p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                <h3 className="text-lg font-medium text-yellow-400 mb-2">ECG Classification</h3>
+                <p className="text-gray-300 mb-2">
+                  Automatically classifies ECG patterns into categories including:
+                </p>
+                <ul className="text-gray-300 space-y-1 list-disc list-inside">
+                  <li>Normal Sinus Rhythm</li>
+                  <li>Atrial Fibrillation</li>
+                  <li>Premature Contractions</li>
+                  <li>ST Elevation/Depression</li>
+                  <li>Other abnormalities</li>
+                </ul>
+                <p className="text-gray-300 mt-2 text-sm italic">
+                  Classification runs automatically every 5 seconds when the AI Analysis panel is visible.
+                </p>
+              </div>
+              
+              <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <h3 className="text-lg font-medium text-blue-400 mb-2">Physiological State Analysis</h3>
+                <p className="text-gray-300 mb-2">
+                  Uses HRV metrics to determine the user's physiological state:
+                </p>
+                <ul className="text-gray-300 space-y-1 list-disc list-inside">
+                  <li><span className="text-green-400">Relaxed</span>: Low stress, parasympathetic dominance</li>
+                  <li><span className="text-blue-400">Focused</span>: Balanced autonomic activity</li>
+                  <li><span className="text-orange-400">Fatigue</span>: Reduced HRV, possible exhaustion</li>
+                  <li><span className="text-red-400">High Stress</span>: Sympathetic dominance, reduced HRV</li>
                 </ul>
               </div>
             </div>
