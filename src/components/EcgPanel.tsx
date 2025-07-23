@@ -692,6 +692,29 @@ export default function EcgFullPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAIAnalysis, modelLoaded, ecgIntervals]);
 
+  function calculateQTc(qt: number, rr: number) {
+    // Different formulas for different scenarios
+    
+    // Bazett (most common, but less accurate at extreme heart rates)
+    const bazett = qt / Math.sqrt(rr / 1000);
+    
+    // Fridericia (better for bradycardia)
+    const fridericia = qt / Math.pow(rr / 1000, 1/3);
+    
+    // Framingham (good for general population)
+    const framingham = qt + 0.154 * (1000 - rr);
+    
+    // Hodges (another alternative)
+    const hodges = qt + 1.75 * (60000 / rr - 60);
+    
+    // Select formula based on heart rate
+    const hr = 60000 / rr;
+    
+    if (hr < 60) return fridericia; // For bradycardia
+    if (hr > 100) return framingham; // For tachycardia
+    return bazett; // For normal range
+  }
+
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ">
       {/* Grid background */}

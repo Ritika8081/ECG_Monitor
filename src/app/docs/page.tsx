@@ -112,6 +112,17 @@ export default function DocsPage() {
                 </ul>
               </div>
             </div>
+            
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg mt-4">
+              <h4 className="text-sm font-medium text-amber-400">Important Relationship:</h4>
+              <p className="text-gray-300 text-sm mt-1">
+                Heart Rate (BPM) and RR Interval (ms) are inversely related:
+                <code className="block bg-black/40 p-2 mt-1 rounded font-mono text-xs">
+                  Heart Rate (BPM) = 60,000 / RR Interval (ms)
+                </code>
+                Ensure these values are consistent when entering manual data.
+              </p>
+            </div>
           </div>
           
           <div className="bg-black/40 backdrop-blur-sm border border-white/20 rounded-xl p-6 mt-8">

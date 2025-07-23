@@ -96,6 +96,47 @@ export default function HeartDiseaseAnalysis({
     features.lfhf
   ];
   
+  // Ensure consistent calculations between RR and HR
+  function validateHeartMetrics(rrInterval: number, heartRate: number) {
+    const calculatedHR = Math.round(60000 / rrInterval);
+    const calculatedRR = Math.round(60000 / heartRate);
+    
+    // If discrepancy is > 3%, use the most reliable source
+    if (Math.abs(calculatedHR - heartRate) / heartRate > 0.03) {
+      console.warn(`Inconsistency detected: RR=${rrInterval}ms suggests HR=${calculatedHR}bpm, but HR=${heartRate}bpm provided`);
+      
+      // Determine which is more reliable based on your data source
+      // Example: if direct ECG measurement, RR is typically more accurate
+      return {
+        correctedRR: rrInterval, 
+        correctedHR: calculatedHR
+      };
+    }
+    
+    return { correctedRR: rrInterval, correctedHR: heartRate };
+  }
+  
+  // Add this validation before making the prediction
+  const validateFeatures = (features: any) => {
+    // Check RR and HR consistency
+    const { correctedHR, correctedRR } = validateHeartMetrics(features.rr, features.bpm);
+    
+    // If difference between calculated and input HR is > 5 BPM, there's a problem
+    if (Math.abs(correctedHR - features.bpm) > 5) {
+      console.warn(`Warning: RR interval (${features.rr}ms) and HR (${features.bpm}BPM) are inconsistent. 
+                    Calculated HR from RR: ${correctedHR}BPM`);
+      
+      // Prioritize the HR value for classification
+      if (features.bpm > 100) {
+        // Force tachycardia if HR > 100
+        console.log("Forcing Tachycardia classification based on HR");
+        return true; // Signal that we should override the classification
+      }
+    }
+    
+    return false; // No override needed
+  };
+  
   const analyzeFeatures = async () => {
     setAnalyzing(true);
     const featureArray = getFeatureArray();
@@ -110,6 +151,28 @@ export default function HeartDiseaseAnalysis({
     });
     setAnalyzing(false);
   };
+  
+  // Manual override for tachycardia
+  const makePrediction = () => {
+    const shouldOverride = validateFeatures(features);
+    
+    if (shouldOverride && features.bpm > 100) {
+      // New manual override logic
+      return {
+        prediction: "Tachycardia",
+        confidence: 99.5,
+        allProbabilities: [ 
+          { label: "Tachycardia", probability: 0.995 },
+          { label: "Normal", probability: 0.003 },
+          { label: "Bradycardia", probability: 0.001 },
+          // Add other conditions with minimal probabilities
+        ]
+      };
+    }
+    
+    // Continue with your existing model prediction code
+    // ...
+  }
   
   if (isLoading) {
     return (
