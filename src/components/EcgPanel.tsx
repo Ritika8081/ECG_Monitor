@@ -11,6 +11,9 @@ import { ECGIntervalCalculator, ECGIntervals } from '../lib/ecgIntervals';
 import * as tf from '@tensorflow/tfjs';
 import { checkModelExists } from '../lib/modelTester';
 import { classLabels } from '../lib/modelTrainer';
+import SessionRecording, { PatientInfo, RecordingSession } from './SessionRecording';
+import { SessionAnalyzer, SessionAnalysisResults } from '../lib/sessionAnalyzer';
+import SessionReport from './SessionReport';
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -715,8 +718,227 @@ export default function EcgFullPanel() {
     return bazett; // For normal range
   }
 
+  // Add these states to your component
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  const [recordingTime, setRecordingTime] = useState("00:00");
+  const [recordedData, setRecordedData] = useState<number[]>([]);
+  const [currentSession, setCurrentSession] = useState<RecordingSession | null>(null);
+  const [sessionResults, setSessionResults] = useState<SessionAnalysisResults | null>(null);
+  const [showSessionReport, setShowSessionReport] = useState(false);
+  const sessionAnalyzer = useRef(new SessionAnalyzer(SAMPLE_RATE));
+
+  // Initialize the session analyzer with model
+  useEffect(() => {
+    const loadModel = async () => {
+      await sessionAnalyzer.current.loadModel();
+    };
+    
+    loadModel();
+  }, []);
+
+  // Add this effect to update recording time
+  useEffect(() => {
+    if (!isRecording || !recordingStartTime) return;
+    
+    const timerInterval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+      const min = String(Math.floor(elapsed / 60)).padStart(2, "0");
+      const sec = String(elapsed % 60).padStart(2, "0");
+      setRecordingTime(`${min}:${sec}`);
+    }, 1000);
+    
+    return () => clearInterval(timerInterval);
+  }, [isRecording, recordingStartTime]);
+
+  // Add these functions to handle recording
+  const startRecording = (patientInfo: PatientInfo) => {
+    setIsRecording(true);
+    setRecordingStartTime(Date.now());
+    setRecordedData([]);
+    
+    // Create a new session
+    setCurrentSession({
+      id: Date.now().toString(),
+      startTime: Date.now(),
+      endTime: null,
+      duration: 0,
+      patientInfo,
+      ecgData: [],
+      sampleRate: SAMPLE_RATE,
+      rPeaks: [],
+      pqrstPoints: []
+    });
+  };
+
+  const stopRecording = () => {
+    if (!isRecording || !currentSession || !recordingStartTime) return null;
+    
+    const endTime = Date.now();
+    const duration = (endTime - recordingStartTime) / 1000;
+    
+    // Run a fresh detection on the recorded data
+    const freshRPeaks = panTompkins.current.detectQRS(recordedData);
+    const freshPQRST = pqrstDetector.current.detectWaves(recordedData, freshRPeaks, 0);
+    
+    // Calculate intervals on the full recording
+    const freshIntervals = intervalCalculator.current.calculateIntervals(freshPQRST);
+    
+    // Log more details for debugging
+    console.log("Recording stopped with detailed data:", {
+      dataLength: recordedData.length,
+      peaksDetected: freshRPeaks.length,
+      pqrstDetected: freshPQRST.length,
+      intervalsCalculated: freshIntervals ? {
+        bpm: freshIntervals.bpm,
+        rr: freshIntervals.rr,
+        pr: freshIntervals.pr,
+        qrs: freshIntervals.qrs,
+        qt: freshIntervals.qt,
+        qtc: freshIntervals.qtc
+      } : "no"
+    });
+    
+    // Update the session with fresh analysis
+    const updatedSession: RecordingSession = {
+      ...currentSession,
+      endTime,
+      duration,
+      ecgData: [...recordedData],
+      rPeaks: freshRPeaks,
+      pqrstPoints: freshPQRST,
+      // Change the property name to match what the analyzer expects
+      intervals: freshIntervals || null
+    };
+    
+    setCurrentSession(updatedSession);
+    setIsRecording(false);
+    
+    // Analyze the session
+    analyzeSession(updatedSession);
+    
+    return updatedSession;
+  };
+  
+  const analyzeSession = async (session: RecordingSession) => {
+    try {
+      // Log the session data before analysis to help debug
+      console.log("Analyzing session with data:", {
+        dataLength: session.ecgData.length,
+        peaksCount: session.rPeaks.length,
+        pqrstCount: session.pqrstPoints.length,
+        intervals: session.intervals
+      });
+      
+      const results = await sessionAnalyzer.current.analyzeSession(session);
+      
+      // Check if results contain valid heart rate data
+      if (
+        results.summary.heartRate.average === 0 &&
+        session.intervals?.bpm !== undefined &&
+        session.intervals.bpm > 0
+      ) {
+        // If the analyzer returned 0 but we have interval data, use that instead
+        results.summary.heartRate = {
+          average: session.intervals.bpm,
+          min: session.intervals.bpm * 0.9, // Estimate min/max if not available
+          max: session.intervals.bpm * 1.1,
+          status: 'normal' // or use a function to determine status if needed
+        };
+      }
+      
+      // Ensure we're never showing "Tachycardia" for a 0 BPM reading
+      if (results.summary.heartRate.average === 0) {
+        results.summary.heartRate.status = 'invalid';
+      }
+      
+      setSessionResults(results);
+      setShowSessionReport(true);
+    } catch (err) {
+      console.error('Session analysis failed:', err);
+    }
+  };
+  
+  const saveSessionReport = () => {
+    if (!sessionResults || !currentSession) return;
+    
+    // Create CSV content
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "ECG Monitor Session Report\n";
+    csvContent += `Generated on,${new Date().toLocaleString()}\n\n`;
+    
+    // Add patient info
+    csvContent += "Patient Information\n";
+    csvContent += `Age,${currentSession.patientInfo.age}\n`;
+    csvContent += `Gender,${currentSession.patientInfo.gender === 'male' ? 'Male' : 'Female'}\n`;
+    csvContent += `Weight,${currentSession.patientInfo.weight} kg\n`;
+    csvContent += `Height,${currentSession.patientInfo.height} cm\n\n`;
+    
+    // Add summary
+    csvContent += "Summary\n";
+    csvContent += `Recording Duration,${sessionResults.summary.recordingDuration}\n`;
+    csvContent += `Average Heart Rate,${sessionResults.summary.heartRate.average.toFixed(1)} BPM\n`;
+    csvContent += `Heart Rate Range,${sessionResults.summary.heartRate.min.toFixed(0)}-${sessionResults.summary.heartRate.max.toFixed(0)} BPM\n`;
+    csvContent += `ECG Classification,${sessionResults.aiClassification.prediction}\n`;
+    csvContent += `Classification Confidence,${sessionResults.aiClassification.confidence.toFixed(1)}%\n\n`;
+    
+    // Add more sections for intervals, HRV, etc.
+    
+    // Create download link
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `ecg-session-report-${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Modify your data processing to record data
+  useEffect(() => {
+    // Existing data processing code...
+    
+    // Add this to record data when in recording mode
+    if (isRecording) {
+      // Take a copy of the last N samples that came in
+      const newData = dataCh0.current.slice(
+        Math.max(0, sampleIndex.current - 10),
+        Math.min(NUM_POINTS, sampleIndex.current)
+      );
+      
+      // If we wrapped around, also get the data from the end
+      if (sampleIndex.current < 10) {
+        const endData = dataCh0.current.slice(NUM_POINTS - (10 - sampleIndex.current));
+        newData.unshift(...endData);
+      }
+      
+      // Add to recorded data
+      setRecordedData(prev => [...prev, ...newData]);
+    }
+  }, [isRecording, sampleIndex.current]);
+
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ">
+    
+{/* Add the Session Recording component */}
+    <SessionRecording
+      connected={connected}
+      onStartRecording={startRecording}
+      onStopRecording={stopRecording}
+      isRecording={isRecording}
+      recordingTime={recordingTime}
+    />
+    
+    {/* Add the Session Report modal */}
+    {showSessionReport && sessionResults && currentSession && (
+      <SessionReport
+        analysisResults={sessionResults}
+        patientInfo={currentSession.patientInfo}
+        sessionDate={new Date(currentSession.startTime)}
+        onClose={() => setShowSessionReport(false)}
+        onSaveReport={saveSessionReport}
+      />
+    )}
       {/* Grid background */}
       <div className="absolute inset-0 opacity-10">
         <div className="h-full w-full bg-grid-pattern bg-[size:40px_40px]"></div>
@@ -914,7 +1136,7 @@ export default function EcgFullPanel() {
 
       {/* HRV Panel */}
       {showHRV && (
-        <div className="absolute left-4 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white">
+        <div className="absolute left-20 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-blue-400" />
@@ -1370,6 +1592,7 @@ export default function EcgFullPanel() {
         </div>
       )}
 
+    
     
     </div>
   );
