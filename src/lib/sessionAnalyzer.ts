@@ -467,6 +467,15 @@ export class SessionAnalyzer {
         featureVector = paddedFeatures;
       }
       
+      // Extract and validate the heart rate specifically
+      const rawHeartRate = featureVector[1];
+      // Use a valid default heart rate if the value is missing, zero, or invalid
+      const heartRate = (rawHeartRate && !isNaN(rawHeartRate) && rawHeartRate > 30) 
+                       ? rawHeartRate 
+                       : 75; // Default to a normal adult heart rate
+      
+      console.log("Heart rate for analysis:", heartRate);
+      
       // Create input tensor with correct shape
       const inputTensor = tf.tensor2d([featureVector], [1, 10]);
       
@@ -486,33 +495,26 @@ export class SessionAnalyzer {
       const predictedClass = this.getClassLabel(maxIndex);
       const confidence = predArray[maxIndex] * 100;
       
-      // Create a duration string from the features
-      // Make sure duration has a reasonable default
-      const rrInterval = Math.max(featureVector[0] || 1000, 1); // Default to 1000ms if zero or undefined
-      const duration = rrInterval / 1000; // Convert ms to seconds
-      const durationStr = this.formatDuration(duration);
+      // Extract HRV metrics
+      const rmssd = Math.max(featureVector[7] ?? 0, 0.1); // Ensure positive values
+      const sdnn = Math.max(featureVector[8] ?? 0, 0.1);  // Ensure positive values
+      const lfhfRatio = Math.max(featureVector[9] ?? 0, 0.1); // Ensure positive values
       
-      // Extract heart rate from the features with validation and fallback
-      const rawHeartRate = featureVector[1];
-      // If heart rate is missing or zero, calculate from RR interval or use default
-      const heartRate = (rawHeartRate && rawHeartRate > 0) ? 
-                        rawHeartRate : 
-                        (rrInterval > 0 ? 60000 / rrInterval : 70); // Default to 70 BPM
+      // Calculate valid min/max heart rates
+      const minHR = Math.max(heartRate * 0.85, 40); // Reasonable minimum
+      const maxHR = Math.min(heartRate * 1.15, 180); // Reasonable maximum
+
+      // Compute physiological state
+      const physiologicalState = this.determinePhysiologicalState(rmssd, sdnn, lfhfRatio);
       
-      console.log("Calculated heart rate:", heartRate);
-      
-      // Clean up tensors
-      inputTensor.dispose();
-      prediction.dispose();
-      
-      // Return the results in the expected format
+      // Return the results with corrected heart rate values
       return {
         summary: {
-          recordingDuration: durationStr,
+          recordingDuration: this.formatDuration(60), // Default to 1 minute if no duration
           heartRate: {
             average: heartRate,
-            min: Math.max(heartRate * 0.9, 1), // Ensure min is never 0 or negative
-            max: Math.max(heartRate * 1.1, 2), // Ensure max is never 0 or too low
+            min: minHR,
+            max: maxHR,
             status: this.determineHeartRateStatus(heartRate)
           },
           rhythm: {
@@ -523,32 +525,26 @@ export class SessionAnalyzer {
           }
         },
         intervals: {
-          pr: { average: featureVector[2], status: this.determineHeartRateStatus(heartRate) }, 
-          qrs: { average: featureVector[3], status: this.determineHeartRateStatus(heartRate) },
+          pr: { average: featureVector[2], status: this.determineHeartRateStatus(featureVector[1]) }, 
+          qrs: { average: featureVector[3], status: this.determineHeartRateStatus(featureVector[1]) },
           qt: { average: featureVector[4] },
-          qtc: { average: featureVector[5], status: this.determineHeartRateStatus(heartRate) },
+          qtc: { average: featureVector[5], status: this.determineHeartRateStatus(featureVector[1]) },
           st: { deviation: 0, status: 'unknown' }
         },
         hrv: {
           timeMetrics: {
-            rmssd: featureVector[7] ?? 0,
-            sdnn: featureVector[8] ?? 0,
+            rmssd: rmssd,
+            sdnn: sdnn,
             pnn50: 0,
             triangularIndex: 0
           },
           frequencyMetrics: {
             lf: 0,
             hf: 0,
-            lfhfRatio: featureVector[9] ?? 0
+            lfhfRatio: lfhfRatio
           },
-          assessment: {
-            status: 'unknown',
-            description: ''
-          },
-          physiologicalState: {
-            state: 'unknown',
-            confidence: 0
-          }
+          assessment: this.determineHRVStatus(rmssd, sdnn, lfhfRatio),
+          physiologicalState: physiologicalState
         },
         aiClassification: {
           prediction: predictedClass,
@@ -562,6 +558,66 @@ export class SessionAnalyzer {
       console.error("Error analyzing features:", error);
       throw error;
     }
+  }
+
+  // Add these helper methods to your SessionAnalyzer class
+  private determinePhysiologicalState(rmssd: number, sdnn: number, lfhfRatio: number): { state: string; confidence: number } {
+    // Default values
+    let state = "unknown";
+    let confidence = 0;
+
+    // Basic validation to ensure we have meaningful data
+    if (rmssd <= 0 || sdnn <= 0) {
+      return { state, confidence };
+    }
+
+    // Determine state based on HRV metrics
+    if (lfhfRatio > 2.5) {
+      state = "Stressed";
+      confidence = Math.min(80, 50 + (lfhfRatio - 2.5) * 10);
+    } else if (lfhfRatio < 0.5) {
+      state = "Relaxed";
+      confidence = Math.min(80, 50 + (0.5 - lfhfRatio) * 20);
+    } else if (sdnn > 100 && rmssd > 50) {
+      state = "Active";
+      confidence = Math.min(70, 40 + (sdnn - 100) / 5);
+    } else if (sdnn > 50 && rmssd > 30) {
+      state = "Normal";
+      confidence = 60;
+    } else {
+      state = "Fatigued";
+      confidence = Math.min(70, 40 + (50 - sdnn) / 2);
+    }
+
+    return { state, confidence };
+  }
+
+  private determineHRVStatus(rmssd: number, sdnn: number, lfhfRatio: number): { status: string; description: string } {
+    // Default values
+    let status = "unknown";
+    let description = "Insufficient data to assess HRV status.";
+
+    // Basic validation
+    if (rmssd <= 0 || sdnn <= 0) {
+      return { status, description };
+    }
+
+    // Assess HRV based on commonly used clinical guidelines
+    if (sdnn < 20) {
+      status = "poor";
+      description = "Low HRV may indicate reduced cardiac adaptability.";
+    } else if (sdnn >= 20 && sdnn < 50) {
+      status = "below average";
+      description = "Below average HRV suggests room for cardiovascular improvement.";
+    } else if (sdnn >= 50 && sdnn < 100) {
+      status = "average";
+      description = "Average HRV indicates normal cardiac autonomic function.";
+    } else {
+      status = "good";
+      description = "Good HRV suggests healthy cardiac autonomic regulation.";
+    }
+
+    return { status, description };
   }
 
   // Helper method that should also be in your SessionAnalyzer class

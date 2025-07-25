@@ -83,7 +83,7 @@ export default function EcgFullPanel() {
     if (!modelLoaded || !ecgIntervals) return;
     const interval = setInterval(() => {
       analyzeCurrent();
-    }, 5000); // Run every 5 seconds
+    }, 10000); // Run every 10 seconds
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAnalyze, modelLoaded, ecgIntervals]);
@@ -689,8 +689,8 @@ export default function EcgFullPanel() {
     // Set up auto-refresh
     const interval = setInterval(() => {
       analyzeCurrent();
-    }, 5000); // Run every 5 seconds
-    
+    }, 10000); // Run every 10 seconds
+
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAIAnalysis, modelLoaded, ecgIntervals]);

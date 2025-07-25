@@ -145,7 +145,7 @@ export default function DocsPage() {
                   <li>Other abnormalities</li>
                 </ul>
                 <p className="text-gray-300 mt-2 text-sm italic">
-                  Classification runs automatically every 5 seconds when the AI Analysis panel is visible.
+                  Classification runs automatically every 10 seconds when the AI Analysis panel is visible.
                 </p>
               </div>
               
