@@ -820,40 +820,38 @@ export default function EcgFullPanel() {
     return updatedSession;
   };
   
+  // Add this at the beginning of your analyzeSession function
   const analyzeSession = async (session: RecordingSession) => {
     try {
-      // Log the session data before analysis to help debug
-      console.log("Analyzing session with data:", {
-        dataLength: session.ecgData.length,
-        peaksCount: session.rPeaks.length,
-        pqrstCount: session.pqrstPoints.length,
-        intervals: session.intervals
-      });
-      
-      const results = await sessionAnalyzer.current.analyzeSession(session);
-      
-      // Check if results contain valid heart rate data
-      if (
-        results.summary.heartRate.average === 0 &&
-        session.intervals?.bpm !== undefined &&
-        session.intervals.bpm > 0
-      ) {
-        // If the analyzer returned 0 but we have interval data, use that instead
-        results.summary.heartRate = {
-          average: session.intervals.bpm,
-          min: session.intervals.bpm * 0.9, // Estimate min/max if not available
-          max: session.intervals.bpm * 1.1,
-          status: 'normal' // or use a function to determine status if needed
-        };
+      // Force re-initialization of the analyzer if the method is missing
+      if (!sessionAnalyzer.current.analyzeFeatures) {
+        console.log("Re-initializing session analyzer...");
+        sessionAnalyzer.current = new SessionAnalyzer(SAMPLE_RATE);
+        await sessionAnalyzer.current.loadModel();
       }
-      
-      // Ensure we're never showing "Tachycardia" for a 0 BPM reading
-      if (results.summary.heartRate.average === 0) {
-        results.summary.heartRate.status = 'invalid';
+
+      // Rest of your function
+      if (session.intervals) {
+        // Use pre-calculated interval data for AI analysis
+        const featureVector = [
+          session.intervals.rr,
+          session.intervals.bpm,
+          session.intervals.pr,
+          session.intervals.qrs,
+          session.intervals.qt || 0,
+          session.intervals.qtc,
+          stSegmentData?.deviation || 0,  // ST segment data
+          hrvMetrics?.rmssd || 0,         // HRV metric
+          hrvMetrics?.sdnn || 0,          // HRV metric
+          hrvMetrics?.lfhf?.ratio || 0,   // HRV metric
+        ];
+        
+        // Pass only the feature vector to a specialized analyzer function
+        const results = await sessionAnalyzer.current.analyzeFeatures(featureVector);
+        
+        setSessionResults(results);
+        setShowSessionReport(true);
       }
-      
-      setSessionResults(results);
-      setShowSessionReport(true);
     } catch (err) {
       console.error('Session analysis failed:', err);
     }
@@ -1553,7 +1551,7 @@ export default function EcgFullPanel() {
       {showPQRST && (
         <div className="absolute inset-0 pointer-events-none">
           {visiblePQRST.map((point, index) => {
-            // Only show points from the most recent section of the ECG (e.g., last 20% of the screen)
+            // Only show points from the most recent section of the ECG (e.g., last 20% of the screen)xz
             // This ensures we only label the newest data coming in from the left
             const isRecent = point.index > (sampleIndex.current - NUM_POINTS * 0.2 + NUM_POINTS) % NUM_POINTS &&
               point.index < (sampleIndex.current + NUM_POINTS * 0.1) % NUM_POINTS;
