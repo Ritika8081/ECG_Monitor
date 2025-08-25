@@ -92,10 +92,44 @@ export class SessionAnalyzer {
   
   async loadModel() {
     try {
-      this.model = await tf.loadLayersModel('localstorage://ecg-disease-model');
-      return true;
+      // Try multiple model sources in order of preference
+      const modelSources = [
+        'localstorage://ecg-disease-model',  // User-trained model
+        '/models/ecg-disease-model.json',   // Pretrained model in public folder
+        '/assets/models/ecg-disease-model.json', // Alternative path
+        'https://your-domain.com/models/ecg-disease-model.json' // Remote model
+      ];
+      
+      for (const modelUrl of modelSources) {
+        try {
+          console.log(`Attempting to load model from: ${modelUrl}`);
+          
+          // For localStorage, check if it exists first
+          if (modelUrl.startsWith('localstorage://')) {
+            const models = await tf.io.listModels();
+            if (!models[modelUrl]) {
+              console.log(`Model not found in localStorage: ${modelUrl}`);
+              continue;
+            }
+          }
+          
+          // Try to load the model
+          this.model = await tf.loadLayersModel(modelUrl);
+          console.log(`Model loaded successfully from: ${modelUrl}`);
+          return true;
+          
+        } catch (err) {
+          console.log(`Failed to load model from ${modelUrl}:`, err);
+          continue;
+        }
+      }
+      
+      console.warn('No model could be loaded from any source');
+      return false;
+      
     } catch (err) {
       console.error('Failed to load model:', err);
+      this.model = null;
       return false;
     }
   }
@@ -454,12 +488,10 @@ export class SessionAnalyzer {
 
   async analyzeFeatures(featureVector: number[]): Promise<SessionAnalysisResults> {
     try {
-      // Add this debugging line to see what's coming in
       console.log("Feature vector received:", featureVector);
       
       // Ensure we have all 10 features required by the model
       if (featureVector.length < 10) {
-        // Pad with zeros for missing features
         const paddedFeatures = [...featureVector];
         while (paddedFeatures.length < 10) {
           paddedFeatures.push(0);
@@ -467,157 +499,225 @@ export class SessionAnalyzer {
         featureVector = paddedFeatures;
       }
       
-      // Extract and validate the heart rate specifically
+      // Extract heart rate and validate it
       const rawHeartRate = featureVector[1];
-      // Use a valid default heart rate if the value is missing, zero, or invalid
-      const heartRate = (rawHeartRate && !isNaN(rawHeartRate) && rawHeartRate > 30) 
-                       ? rawHeartRate 
-                       : 75; // Default to a normal adult heart rate
+      const heartRate = (rawHeartRate && rawHeartRate > 30 && rawHeartRate < 300) ? 
+                        rawHeartRate : 75; // Default to 75 BPM if invalid
       
-      console.log("Heart rate for analysis:", heartRate);
+      // Try to load model if not already loaded
+      if (!this.model) {
+        const modelLoaded = await this.loadModel();
+        if (!modelLoaded) {
+          console.warn('Model not available, using rule-based analysis');
+          return this.performRuleBasedAnalysis(featureVector, heartRate);
+        }
+      }
       
       // Create input tensor with correct shape
       const inputTensor = tf.tensor2d([featureVector], [1, 10]);
       
-      if (!this.model) {
-        await this.loadModel();
-        if (!this.model) {
-          throw new Error("Model is not loaded.");
-        }
+      try {
+        const prediction = this.model!.predict(inputTensor) as tf.Tensor;
+        const probabilities = await prediction.data();
+        
+        // Get the predicted class
+        const predArray = Array.from(probabilities);
+        const maxIndex = predArray.indexOf(Math.max(...predArray));
+        const predictedClass = this.getClassLabel(maxIndex);
+        const confidence = predArray[maxIndex] * 100;
+        
+        // Clean up tensors
+        inputTensor.dispose();
+        prediction.dispose();
+        
+        return this.buildAnalysisResults(featureVector, heartRate, predictedClass, confidence, true);
+      } catch (predictionError) {
+        console.error('Prediction failed:', predictionError);
+        inputTensor.dispose();
+        return this.performRuleBasedAnalysis(featureVector, heartRate);
       }
-      
-      const prediction = this.model.predict(inputTensor) as tf.Tensor;
-      const probabilities = await prediction.data();
-      
-      // Get the predicted class
-      const predArray = Array.from(probabilities);
-      const maxIndex = predArray.indexOf(Math.max(...predArray));
-      const predictedClass = this.getClassLabel(maxIndex);
-      const confidence = predArray[maxIndex] * 100;
-      
-      // Extract HRV metrics
-      const rmssd = Math.max(featureVector[7] ?? 0, 0.1); // Ensure positive values
-      const sdnn = Math.max(featureVector[8] ?? 0, 0.1);  // Ensure positive values
-      const lfhfRatio = Math.max(featureVector[9] ?? 0, 0.1); // Ensure positive values
-      
-      // Calculate valid min/max heart rates
-      const minHR = Math.max(heartRate * 0.85, 40); // Reasonable minimum
-      const maxHR = Math.min(heartRate * 1.15, 180); // Reasonable maximum
-
-      // Compute physiological state
-      const physiologicalState = this.determinePhysiologicalState(rmssd, sdnn, lfhfRatio);
-      
-      // Return the results with corrected heart rate values
-      return {
-        summary: {
-          recordingDuration: this.formatDuration(60), // Default to 1 minute if no duration
-          heartRate: {
-            average: heartRate,
-            min: minHR,
-            max: maxHR,
-            status: this.determineHeartRateStatus(heartRate)
-          },
-          rhythm: {
-            classification: predictedClass,
-            confidence: confidence,
-            irregularBeats: 0,
-            percentIrregular: 0
-          }
-        },
-        intervals: {
-          pr: { average: featureVector[2], status: this.determineHeartRateStatus(featureVector[1]) }, 
-          qrs: { average: featureVector[3], status: this.determineHeartRateStatus(featureVector[1]) },
-          qt: { average: featureVector[4] },
-          qtc: { average: featureVector[5], status: this.determineHeartRateStatus(featureVector[1]) },
-          st: { deviation: 0, status: 'unknown' }
-        },
-        hrv: {
-          timeMetrics: {
-            rmssd: rmssd,
-            sdnn: sdnn,
-            pnn50: 0,
-            triangularIndex: 0
-          },
-          frequencyMetrics: {
-            lf: 0,
-            hf: 0,
-            lfhfRatio: lfhfRatio
-          },
-          assessment: this.determineHRVStatus(rmssd, sdnn, lfhfRatio),
-          physiologicalState: physiologicalState
-        },
-        aiClassification: {
-          prediction: predictedClass,
-          confidence: confidence,
-          explanation: this.getExplanationForClass(predictedClass)
-        },
-        abnormalities: [],
-        recommendations: []
-      };
     } catch (error) {
       console.error("Error analyzing features:", error);
-      throw error;
+      return this.performRuleBasedAnalysis(featureVector, 75);
     }
   }
 
-  // Add these helper methods to your SessionAnalyzer class
-  private determinePhysiologicalState(rmssd: number, sdnn: number, lfhfRatio: number): { state: string; confidence: number } {
-    // Default values
-    let state = "unknown";
-    let confidence = 0;
-
-    // Basic validation to ensure we have meaningful data
-    if (rmssd <= 0 || sdnn <= 0) {
-      return { state, confidence };
+  // Add this method for rule-based analysis when AI model is not available
+  private performRuleBasedAnalysis(featureVector: number[], heartRate: number): SessionAnalysisResults {
+    console.log('Performing rule-based analysis');
+    
+    // Simple rule-based classification
+    let prediction = "Normal Sinus Rhythm";
+    let confidence = 70;
+    
+    if (heartRate < 60) {
+      prediction = "Bradycardia";
+      confidence = 80;
+    } else if (heartRate > 100) {
+      prediction = "Tachycardia";
+      confidence = 80;
+    } else if (featureVector[2] > 200) { // PR interval
+      prediction = "First-degree AV Block";
+      confidence = 75;
+    } else if (featureVector[3] > 120) { // QRS duration
+      prediction = "Bundle Branch Block";
+      confidence = 75;
     }
-
-    // Determine state based on HRV metrics
-    if (lfhfRatio > 2.5) {
-      state = "Stressed";
-      confidence = Math.min(80, 50 + (lfhfRatio - 2.5) * 10);
-    } else if (lfhfRatio < 0.5) {
-      state = "Relaxed";
-      confidence = Math.min(80, 50 + (0.5 - lfhfRatio) * 20);
-    } else if (sdnn > 100 && rmssd > 50) {
-      state = "Active";
-      confidence = Math.min(70, 40 + (sdnn - 100) / 5);
-    } else if (sdnn > 50 && rmssd > 30) {
-      state = "Normal";
-      confidence = 60;
-    } else {
-      state = "Fatigued";
-      confidence = Math.min(70, 40 + (50 - sdnn) / 2);
-    }
-
-    return { state, confidence };
+    
+    return this.buildAnalysisResults(featureVector, heartRate, prediction, confidence, false);
   }
 
-  private determineHRVStatus(rmssd: number, sdnn: number, lfhfRatio: number): { status: string; description: string } {
-    // Default values
-    let status = "unknown";
-    let description = "Insufficient data to assess HRV status.";
+  // Helper method to build consistent analysis results
+  private buildAnalysisResults(
+    featureVector: number[], 
+    heartRate: number, 
+    prediction: string, 
+    confidence: number,
+    usedAI: boolean
+  ): SessionAnalysisResults {
+    const rrInterval = Math.max(featureVector[0] || 1000, 1);
+    const duration = rrInterval / 1000;
+    const durationStr = this.formatDuration(duration);
+    
+    return {
+      summary: {
+        recordingDuration: durationStr,
+        heartRate: {
+          average: heartRate,
+          min: Math.max(heartRate * 0.9, 40),
+          max: Math.min(heartRate * 1.1, 200),
+          status: this.determineHeartRateStatus(heartRate)
+        },
+        rhythm: {
+          classification: prediction,
+          confidence: confidence,
+          irregularBeats: 0,
+          percentIrregular: 0
+        }
+      },
+      intervals: {
+        pr: { 
+          average: featureVector[2] || 0, 
+          status: this.determineIntervalStatus(featureVector[2], 'pr')
+        },
+        qrs: { 
+          average: featureVector[3] || 0, 
+          status: this.determineIntervalStatus(featureVector[3], 'qrs')
+        },
+        qt: { 
+          average: featureVector[4] || 0 
+        },
+        qtc: { 
+          average: featureVector[5] || 0, 
+          status: this.determineIntervalStatus(featureVector[5], 'qtc')
+        },
+        st: { 
+          deviation: featureVector[6] || 0, 
+          status: this.determineSTStatus(featureVector[6] || 0)
+        }
+      },
+      hrv: {
+        timeMetrics: {
+          rmssd: Math.max(featureVector[7] || 0, 0),
+          sdnn: Math.max(featureVector[8] || 0, 0),
+          pnn50: 0,
+          triangularIndex: 0
+        },
+        frequencyMetrics: {
+          lf: 0,
+          hf: 0,
+          lfhfRatio: Math.max(featureVector[9] || 0, 0)
+        },
+        assessment: {
+          status: 'normal',
+          description: 'Basic HRV analysis'
+        },
+        physiologicalState: {
+          state: 'relaxed',
+          confidence: 50
+        }
+      },
+      aiClassification: {
+        prediction: prediction,
+        confidence: confidence,
+        explanation: usedAI ? 
+          this.getExplanationForClass(prediction) : 
+          "Analysis performed using rule-based logic (AI model not available)."
+      },
+      abnormalities: this.detectBasicAbnormalities(featureVector, heartRate),
+      recommendations: this.generateBasicRecommendations(prediction, usedAI)
+    };
+  }
 
-    // Basic validation
-    if (rmssd <= 0 || sdnn <= 0) {
-      return { status, description };
+  // Helper methods for status determination
+  private determineIntervalStatus(value: number, type: 'pr' | 'qrs' | 'qtc'): string {
+    if (!value || isNaN(value) || value <= 0) return 'unknown';
+    
+    switch (type) {
+      case 'pr':
+        if (value < 120) return 'short';
+        if (value > 200) return 'prolonged';
+        return 'normal';
+      case 'qrs':
+        if (value > 120) return 'wide';
+        return 'normal';
+      case 'qtc':
+        if (value > 450) return 'prolonged';
+        if (value < 350) return 'short';
+        return 'normal';
+      default:
+        return 'unknown';
     }
+  }
 
-    // Assess HRV based on commonly used clinical guidelines
-    if (sdnn < 20) {
-      status = "poor";
-      description = "Low HRV may indicate reduced cardiac adaptability.";
-    } else if (sdnn >= 20 && sdnn < 50) {
-      status = "below average";
-      description = "Below average HRV suggests room for cardiovascular improvement.";
-    } else if (sdnn >= 50 && sdnn < 100) {
-      status = "average";
-      description = "Average HRV indicates normal cardiac autonomic function.";
-    } else {
-      status = "good";
-      description = "Good HRV suggests healthy cardiac autonomic regulation.";
+  private determineSTStatus(deviation: number): string {
+    if (isNaN(deviation)) return 'unknown';
+    if (Math.abs(deviation) < 0.5) return 'normal';
+    if (deviation > 0.5) return 'elevated';
+    if (deviation < -0.5) return 'depressed';
+    return 'normal';
+  }
+
+  private detectBasicAbnormalities(featureVector: number[], heartRate: number): { type: string; severity: 'low' | 'medium' | 'high'; description: string }[] {
+    const abnormalities: { type: string; severity: 'low' | 'medium' | 'high'; description: string }[] = [];
+    
+    if (heartRate < 60) {
+      abnormalities.push({
+        type: 'Bradycardia',
+        severity: heartRate < 50 ? 'high' : 'medium',
+        description: 'Heart rate is below normal range.'
+      });
     }
+    
+    if (heartRate > 100) {
+      abnormalities.push({
+        type: 'Tachycardia',
+        severity: heartRate > 120 ? 'high' : 'medium',
+        description: 'Heart rate is above normal range.'
+      });
+    }
+    
+    return abnormalities;
+  }
 
-    return { status, description };
+  private generateBasicRecommendations(prediction: string, usedAI: boolean): string[] {
+    const recommendations = [
+      "This device is not a medical diagnostic tool. Always consult with a healthcare professional."
+    ];
+    
+    if (!usedAI) {
+      recommendations.push(
+        "For more accurate AI-powered analysis, please train the model first using the Model Training section."
+      );
+    }
+    
+    if (prediction !== "Normal Sinus Rhythm") {
+      recommendations.push(
+        "Consider scheduling a consultation with a cardiologist for further evaluation."
+      );
+    }
+    
+    return recommendations;
   }
 
   // Helper method that should also be in your SessionAnalyzer class

@@ -952,7 +952,7 @@ export default function EcgFullPanel() {
       {/* Improved Fixed Sidebar */}
       <div className="fixed left-0 top-0 h-full z-30 flex items-center">
         <div 
-          className="group h-full py-6 bg-black/50 backdrop-blur-md border-r border-white/10 flex flex-col items-center justify-center transition-all duration-300 hover:w-[240px] w-16"
+          className="group h-full py-6 px-2 bg-black backdrop-blur border-r border-white/10 flex flex-col items-center justify-center transition-all duration-300 hover:w-[240px] w-16"
         >
           {/* Connect Device Button */}
           <div className="relative w-full mb-5">

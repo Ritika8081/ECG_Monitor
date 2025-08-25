@@ -137,7 +137,7 @@ export default function SessionRecording({
   return (
     <>
       {/* Recording Controls */}
-      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50
+      <div className="fixed bottom-2 left-1/2 transform -translate-x-1/2 z-50
                     bg-black/70 backdrop-blur-md border border-white/20 rounded-full
                     py-2 px-4 flex items-center gap-4">
         {!isRecording ? (
@@ -146,7 +146,7 @@ export default function SessionRecording({
               onClick={() => setShowPatientInfo(true)}
               disabled={!connected}
               className={`flex items-center gap-2 rounded-full px-4 py-2
-                        ${connected ? 'bg-red-500 hover:bg-red-600 text-white' :
+                        ${connected ? 'bg-gray-600 text-white' :
                                     'bg-gray-700 text-gray-400 cursor-not-allowed'}`}
             >
               <Play className="w-5 h-5" fill="currentColor" />
