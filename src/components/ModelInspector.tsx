@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import { classLabels } from '../lib/modelTrainer';
+import { zscoreNorm } from '../lib/modelTrainer'; // Make sure this is exported
+
 
 export default function ModelInspector() {
   const [model, setModel] = useState<tf.LayersModel | null>(null);
@@ -10,9 +11,8 @@ export default function ModelInspector() {
   const [error, setError] = useState<string | null>(null);
   const [modelInfo, setModelInfo] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'structure' | 'weights' | 'test'>('structure');
-  const [testInputs, setTestInputs] = useState([
-    950, 60, 180, 100, 380, 450, 0.1, 30, 40, 2.0
-  ]);
+  const [testInputText, setTestInputText] = useState<string>('');
+  const [testInputs, setTestInputs] = useState<number[]>(Array.from({ length: 720 }, () => Math.random() * 2 - 1));
   const [prediction, setPrediction] = useState<any>(null);
   
   // Load model on component mount
@@ -70,36 +70,42 @@ export default function ModelInspector() {
     loadModel();
   }, []);
   
+  // Handle textarea change
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setTestInputText(e.target.value);
+    const arr = e.target.value
+      .split(',')
+      .map(s => parseFloat(s.trim()))
+      .filter(v => !isNaN(v));
+    if (arr.length === 720) setTestInputs(arr);
+  };
+  
   // Make prediction with the model
   const handlePredict = async () => {
     if (!model) return;
-    
+
     try {
-      // Convert inputs to tensor
-      const inputTensor = tf.tensor2d([testInputs], [1, 10]);
-      
-      // Run prediction
+      const normInputs = zscoreNorm(testInputs);
+      const inputTensor = tf.tensor3d([normInputs.map(v => [v])], [1, 720, 1]);
       const outputTensor = model.predict(inputTensor) as tf.Tensor;
       const probabilities = await outputTensor.data();
-      
-      // Get class with highest probability
+
       const predictionArray = Array.from(probabilities);
       const maxProbIndex = predictionArray.indexOf(Math.max(...predictionArray));
+      const classLabels = JSON.parse(localStorage.getItem('ecg-class-labels') || '[]');
       const predictedClass = classLabels[maxProbIndex];
-      
-      // Create result object with all class probabilities
+
       const result = {
         prediction: predictedClass,
         confidence: predictionArray[maxProbIndex] * 100,
-        allProbabilities: classLabels.map((label, index) => ({
+        allProbabilities: classLabels.map((label: string, index: number) => ({
           label,
           probability: predictionArray[index] * 100
-        })).sort((a, b) => b.probability - a.probability)
+        })).sort((a: { label: string; probability: number }, b: { label: string; probability: number }) => b.probability - a.probability)
       };
-      
+
       setPrediction(result);
-      
-      // Cleanup tensors
+
       inputTensor.dispose();
       outputTensor.dispose();
     } catch (err) {
@@ -184,7 +190,7 @@ export default function ModelInspector() {
                 <p>Total Layers: {modelInfo.totalLayers}</p>
                 <p>Input Shape: [{modelInfo.inputShape.slice(1).join(', ')}]</p>
                 <p>Output Shape: [{modelInfo.outputShape.slice(1).join(', ')}]</p>
-                <p>Output Classes: {classLabels.length}</p>
+               
               </div>
             </div>
             
@@ -293,37 +299,26 @@ export default function ModelInspector() {
             <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
               <h3 className="text-green-400 font-medium mb-2">Test Model</h3>
               <p className="text-sm text-white">
-                Modify input values below and click "Predict" to test the model.
+                Paste 720 comma-separated ECG values below and click "Predict" to test the model.
               </p>
             </div>
-            
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              {testInputs.map((value, index) => (
-                <div key={index} className="mb-2">
-                  <label className="block text-sm text-gray-400 mb-1">
-                    {getInputLabel(index)}
-                  </label>
-                  <input 
-                    type="number" 
-                    value={value}
-                    onChange={(e) => handleInputChange(index, e.target.value)}
-                    className="w-full bg-black/30 text-white border border-white/20 rounded px-3 py-2"
-                    step="0.1"
-                  />
-                </div>
-              ))}
-            </div>
-            
+            <textarea
+              value={testInputText}
+              onChange={handleTextChange}
+              rows={6}
+              className="w-full bg-black/30 text-white border border-white/20 rounded px-3 py-2 mb-4"
+              placeholder="e.g. 0.12,0.15,0.13,... (720 values)"
+            />
             <div className="flex gap-3 mb-6">
               <button
                 onClick={handlePredict}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg"
+                disabled={testInputs.length !== 720}
               >
                 Predict
               </button>
-              
               <button
-                onClick={resetInputs}
+                onClick={() => { setTestInputText(''); setTestInputs(Array.from({ length: 720 }, () => Math.random() * 2 - 1)); setPrediction(null); }}
                 className="px-6 py-2 bg-gray-700 hover:bg-gray-800 text-white font-medium rounded-lg"
               >
                 Reset

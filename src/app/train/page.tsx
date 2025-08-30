@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { trainEcgModel } from '../../lib/modelTrainer';
+import { trainECGModel } from '../../lib/modelTrainer';
 
 import { testLoadModel, checkModelExists } from '../../lib/modelTester';
 import ModelInspector from '../../components/ModelInspector';
@@ -13,6 +13,7 @@ export default function TrainPage() {
   const [error, setError] = useState<string | null>(null);
   const [modelExists, setModelExists] = useState(false);
   const [modelPrediction, setModelPrediction] = useState<any>(null); // Add state for model prediction
+  const [progress, setProgress] = useState<string>("Not started");
 
   useEffect(() => {
 
@@ -24,13 +25,15 @@ export default function TrainPage() {
     setIsTraining(true);
     setError(null);
     setTrainingComplete(false);
+    setProgress("Training started...");
     
     try {
       console.log("🚀 Starting training...");
-      await trainEcgModel();
+      await trainECGModel();
       console.log("✅ Training completed!");
       setTrainingComplete(true);
       setModelExists(true);
+      setProgress("Training complete!");
     } catch (err) {
       console.error("❌ Training failed:", err);
       setError(err instanceof Error ? err.message : 'Training failed');

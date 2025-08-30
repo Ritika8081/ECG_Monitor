@@ -3,19 +3,20 @@
 
 import { useState } from 'react';
 import HeartDiseaseAnalysis from '@/components/HeartDiseaseAnalysis';
+import { trainECGModel } from '../../lib/modelTrainer';
 
 // Default features for manual input
 const defaultFeatures = {
-  rr: 800,
-  bpm: 75,
-  pr: 160,
-  qrs: 90,
-  qt: 380,
-  qtc: 420,
+  rr: 0,
+  bpm: 0,
+  pr: 0,
+  qrs: 0,
+  qt: 0,
+  qtc: 0,
   stDeviation: 0,
-  rmssd: 35,
-  sdnn: 50,
-  lfhf: 1.5
+  rmssd: 0,
+  sdnn: 0,
+  lfhf: 0
 };
 
 export default function AnalysisPage() {

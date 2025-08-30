@@ -383,29 +383,3 @@ export default function SessionRecording({
     </>
   );
 }
-
-// Dummy example values for ecgIntervals and other variables to prevent errors.
-// Replace these with actual computed values from your ECG analysis logic.
-const ecgIntervals = {
-  rr: 0,
-  bpm: 0,
-  pr: 0,
-  qrs: 0,
-  qt: 0,
-  qtc: 0,
-};
-const stSegmentData = { deviation: 0 };
-const hrvMetrics = { rmssd: 0, sdnn: 0, lfhf: { ratio: 0 } };
-
-const features = [
-  ecgIntervals.rr,        // ❌ Missing or zero
-  ecgIntervals.bpm,       // ❌ Missing or zero
-  ecgIntervals.pr,        // ❌ Shows 0 ms
-  ecgIntervals.qrs,       // ❌ Shows 0 ms
-  ecgIntervals.qt,        // ❌ Shows 0 ms
-  ecgIntervals.qtc,       // ❌ Shows 0 ms
-  stSegmentData?.deviation || 0,  // ❌ Shows 0 mm
-  hrvMetrics?.rmssd || 0,  // ✅ Shows 314.7 ms
-  hrvMetrics?.sdnn || 0,   // ✅ Shows 219.5 ms
-  hrvMetrics?.lfhf?.ratio || 0,  // ✅ Shows 1.14
-];

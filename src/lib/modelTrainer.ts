@@ -1,112 +1,224 @@
 import * as tf from "@tensorflow/tfjs";
+import Papa from "papaparse";
 
-// Sample dataset — we'll replace this with real or synthetic data later
-const rawData = [
-  {
-    input: [950, 60, 180, 100, 380, 450, 0.1, 30, 40, 2.0],
-    label: "Bradycardia",
-  },
-  {
-    input: [450, 130, 160, 90, 360, 390, -0.3, 28, 45, 3.5],
-    label: "Tachycardia",
-  },
-  {
-    input: [860, 72, 220, 140, 390, 470, 0.6, 45, 42, 1.9],
-    label: "BundleBranchBlock",
-  },
-  {
-    input: [800, 75, 160, 100, 420, 460, 1.0, 35, 30, 1.2],
-    label: "STEMI",
-  },
-  {
-    input: [810, 77, 160, 110, 380, 440, -0.6, 50, 30, 1.1],
-    label: "MyocardialIschemia",
-  },
-  {
-    input: [870, 90, 170, 90, 390, 430, 0.3, 40, 28, 2.2],
-    label: "AFib",
-  },
-];
+// --- 1. Load ECG CSV (only first channel) ---
+async function loadECG(path: string, windowSize = 720, stepSize = 360) {
+  return new Promise<number[][]>((resolve) => {
+    Papa.parse(path, {
+      download: true,
+      header: false,
+      complete: (results) => {
+        // ✅ Use first column only (channel 1)
+        const signal = results.data
+          .map((row) => Number((row as string[])[0]))
+          .filter((v) => !isNaN(v));
 
-// Update your dataset with more examples
-
-// Generate a sample with random variation around base values
-function generateSample(baseInput: number[], label: string, count: number = 5) {
-  const samples = [];
-  for (let i = 0; i < count; i++) {
-    // Add random variation to each feature (±10%)
-    const input = baseInput.map(value => {
-      const variation = value * 0.1; // 10% variation
-      return value + (Math.random() * variation * 2 - variation);
+        const windows: number[][] = [];
+        for (let start = 0; start + windowSize <= signal.length; start += stepSize) {
+          windows.push(signal.slice(start, start + windowSize));
+        }
+        resolve(windows);
+      },
     });
-    samples.push({ input, label });
-  }
-  return samples;
+  });
 }
 
-// Base values for different conditions
-const baseValues = {
-  Normal: [800, 75, 160, 90, 380, 420, 0.0, 35, 50, 1.5],
-  Bradycardia: [950, 60, 180, 100, 380, 450, 0.1, 30, 40, 2.0],
-  Tachycardia: [450, 130, 160, 90, 360, 390, -0.3, 28, 45, 3.5],
-  BundleBranchBlock: [860, 72, 220, 140, 390, 470, 0.6, 45, 42, 1.9],
-  STEMI: [800, 75, 160, 100, 420, 460, 1.0, 35, 30, 1.2],
-  MyocardialIschemia: [810, 77, 160, 110, 380, 440, -0.6, 50, 30, 1.1],
-  AFib: [870, 90, 170, 90, 390, 430, 0.3, 40, 28, 2.2]
-};
+// --- 2. Load Annotations ---
+async function loadLabels(path: string, windowSize = 720, stepSize = 360) {
+  return new Promise<string[]>((resolve) => {
+    Papa.parse(path, {
+      download: true,
+      header: true,
+      complete: (results) => {
+        const labels = results.data
+          .map((row: any) => row.annotation_symbol)
+          .filter((v: string) => typeof v === "string" && v.length > 0);
 
-// Generate expanded dataset
-let expandedRawData: { input: number[]; label: string }[] = [];
-
-// Add samples for each condition
-for (const [condition, baseInput] of Object.entries(baseValues)) {
-  expandedRawData = expandedRawData.concat(
-    generateSample(baseInput, condition, 10) // 10 samples per condition
-  );
+        const windowLabels: string[] = [];
+        for (let start = 0; start + windowSize <= labels.length; start += stepSize) {
+          const window = labels.slice(start, start + windowSize);
+          const counts: Record<string, number> = {};
+          window.forEach((l) => (counts[l] = (counts[l] || 0) + 1));
+          const majority = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+          windowLabels.push(majority);
+        }
+        resolve(windowLabels);
+      },
+    });
+  });
 }
 
-// Export class labels so they can be used in the ModelInspector component
-export const classLabels = [
-  "Normal",
-  "Bradycardia",
-  "Tachycardia",
-  "BundleBranchBlock",
-  "STEMI",
-  "MyocardialIschemia",
-  "AFib"
-];
-
-export async function trainEcgModel() {
-  // STEP 1: Prepare input (X) and label (Y)
-  const inputs = expandedRawData.map((d) => d.input);
-  const labels = expandedRawData.map((d) =>
-    classLabels.map((label) => (label === d.label ? 1 : 0)) // one-hot encode
+// --- 3. Preprocessing ---
+export function zscoreNorm(window: number[]) {
+  const mean = window.reduce((a, b) => a + b, 0) / window.length;
+  const std = Math.sqrt(
+    window.reduce((a, b) => a + (b - mean) ** 2, 0) / window.length
   );
+  return window.map((v) => (v - mean) / (std || 1));
+}
 
-  const xs = tf.tensor2d(inputs);
-  const ys = tf.tensor2d(labels);
+function augment(window: number[]) {
+  const noise = window.map(() => (Math.random() - 0.5) * 0.05);
+  return window.map((v, i) => v + noise[i]);
+}
 
-  // STEP 2: Build the model
+// --- 4. Prepare Dataset ---
+let classLabels: string[] = [];
+export { classLabels };
+
+function prepareDataset(
+  windows: number[][],
+  labels: string[],
+  uniqueLabels: string[]
+) {
+  const xs: number[][][] = [];
+  const ys: number[] = [];
+
+  windows.forEach((w, i) => {
+    let win = zscoreNorm(w);
+    win = augment(win);
+    xs.push(win.map((v) => [v])); // shape [windowSize, 1]
+
+    const labelIndex = uniqueLabels.indexOf(labels[i]);
+    ys.push(labelIndex >= 0 ? labelIndex : 0);
+  });
+
+  return {
+    xs: tf.tensor3d(xs),
+    ys: tf.oneHot(tf.tensor1d(ys, "int32"), uniqueLabels.length),
+  };
+}
+
+// --- 5. Build Model ---
+function buildModel(windowSize: number, numClasses: number) {
   const model = tf.sequential();
-  model.add(tf.layers.dense({ inputShape: [10], units: 32, activation: "relu" }));
-  model.add(tf.layers.dense({ units: 16, activation: "relu" }));
-  model.add(tf.layers.dense({ units: classLabels.length, activation: "softmax" }));
+  model.add(
+    tf.layers.conv1d({
+      inputShape: [windowSize, 1],
+      filters: 32,
+      kernelSize: 7,
+      activation: "relu",
+    })
+  );
+  model.add(tf.layers.batchNormalization());
+  model.add(tf.layers.maxPooling1d({ poolSize: 2 }));
+  model.add(
+    tf.layers.conv1d({
+      filters: 64,
+      kernelSize: 5,
+      activation: "relu",
+    })
+  );
+  model.add(tf.layers.globalAveragePooling1d());
+  model.add(
+    tf.layers.dense({
+      units: 64,
+      activation: "relu",
+      kernelRegularizer: tf.regularizers.l2({ l2: 0.01 }),
+    })
+  );
+  model.add(tf.layers.dropout({ rate: 0.5 }));
+  model.add(tf.layers.dense({ units: numClasses, activation: "softmax" }));
 
   model.compile({
-    optimizer: "adam",
+    optimizer: tf.train.adam(),
     loss: "categoricalCrossentropy",
     metrics: ["accuracy"],
   });
 
-  // STEP 3: Train the model
+  return model;
+}
+
+// --- 6. Train and Save (multi-file version) ---
+export async function trainECGModel(onEpoch?: (epoch: number, logs: tf.Logs) => void) {
+  const windowSize = 720, stepSize = 360;
+
+// ✅ List your ECG + annotation pairs here
+const filePairs = [
+  { ecg: "/105_ekg.csv", ann: "/105_annotations_1.csv" },
+  { ecg: "/106_ekg.csv", ann: "/106_annotations_1.csv" },
+  { ecg: "/107_ekg.csv", ann: "/107_annotations_1.csv" },
+  { ecg: "/108_ekg.csv", ann: "/108_annotations_1.csv" },
+  { ecg: "/109_ekg.csv", ann: "/109_annotations_1.csv" },
+  { ecg: "/111_ekg.csv", ann: "/111_annotations_1.csv" },
+  { ecg: "/112_ekg.csv", ann: "/112_annotations_1.csv" },
+  { ecg: "/113_ekg.csv", ann: "/113_annotations_1.csv" },
+  { ecg: "/114_ekg.csv", ann: "/114_annotations_1.csv" },
+  { ecg: "/115_ekg.csv", ann: "/115_annotations_1.csv" },
+  { ecg: "/116_ekg.csv", ann: "/116_annotations_1.csv" },
+  { ecg: "/117_ekg.csv", ann: "/117_annotations_1.csv" },
+  { ecg: "/118_ekg.csv", ann: "/118_annotations_1.csv" },
+  { ecg: "/119_ekg.csv", ann: "/119_annotations_1.csv" },
+  { ecg: "/121_ekg.csv", ann: "/121_annotations_1.csv" },
+  { ecg: "/122_ekg.csv", ann: "/122_annotations_1.csv" },
+  { ecg: "/123_ekg.csv", ann: "/123_annotations_1.csv" },
+  { ecg: "/124_ekg.csv", ann: "/124_annotations_1.csv" },
+  { ecg: "/200_ekg.csv", ann: "/200_annotations_1.csv" },
+  { ecg: "/201_ekg.csv", ann: "/201_annotations_1.csv" },
+  { ecg: "/202_ekg.csv", ann: "/202_annotations_1.csv" },
+  { ecg: "/203_ekg.csv", ann: "/203_annotations_1.csv" },
+  { ecg: "/205_ekg.csv", ann: "/205_annotations_1.csv" },
+  { ecg: "/207_ekg.csv", ann: "/207_annotations_1.csv" },
+  { ecg: "/208_ekg.csv", ann: "/208_annotations_1.csv" },
+  { ecg: "/209_ekg.csv", ann: "/209_annotations_1.csv" },
+  { ecg: "/210_ekg.csv", ann: "/210_annotations_1.csv" },
+  { ecg: "/212_ekg.csv", ann: "/212_annotations_1.csv" },
+  { ecg: "/213_ekg.csv", ann: "/213_annotations_1.csv" },
+  { ecg: "/214_ekg.csv", ann: "/214_annotations_1.csv" },
+  { ecg: "/215_ekg.csv", ann: "/215_annotations_1.csv" },
+  { ecg: "/217_ekg.csv", ann: "/217_annotations_1.csv" },
+  { ecg: "/219_ekg.csv", ann: "/219_annotations_1.csv" },
+  { ecg: "/221_ekg.csv", ann: "/221_annotations_1.csv" },
+  { ecg: "/222_ekg.csv", ann: "/222_annotations_1.csv" },
+  { ecg: "/223_ekg.csv", ann: "/223_annotations_1.csv" },
+  { ecg: "/228_ekg.csv", ann: "/228_annotations_1.csv" },
+  { ecg: "/230_ekg.csv", ann: "/230_annotations_1.csv" },
+  { ecg: "/231_ekg.csv", ann: "/231_annotations_1.csv" },
+  { ecg: "/234_ekg.csv", ann: "/234_annotations_1.csv" },
+];
+  let allWindows: number[][] = [];
+  let allLabels: string[] = [];
+
+  // Load & merge all datasets
+  for (const pair of filePairs) {
+    const ecgWindows = await loadECG(pair.ecg, windowSize, stepSize);
+    const labels = await loadLabels(pair.ann, windowSize, stepSize);
+
+    // Match lengths (safety)
+    const n = Math.min(ecgWindows.length, labels.length);
+    allWindows.push(...ecgWindows.slice(0, n));
+    allLabels.push(...labels.slice(0, n));
+  }
+
+  // Unique labels across all files
+  let uniqueLabels = Array.from(new Set(allLabels));
+  if (uniqueLabels.length < 2) {
+    console.warn("⚠️ Only one class found, adding dummy");
+    uniqueLabels.push("Other");
+  }
+  classLabels = uniqueLabels;
+  console.log("Detected classes:", uniqueLabels);
+
+  // Prepare dataset
+  const { xs, ys } = prepareDataset(allWindows, allLabels, uniqueLabels);
+
+  // Build + train model
+  const model = buildModel(windowSize, uniqueLabels.length);
   await model.fit(xs, ys, {
-    epochs: 40,
-    batchSize: 2,
+    epochs: 30,
+    batchSize: 32,
     validationSplit: 0.2,
-    callbacks: tf.callbacks.earlyStopping({ patience: 5 }),
+    shuffle: true,
+    callbacks: {
+      onEpochEnd: async (epoch, logs) => {
+        if (onEpoch) onEpoch(epoch, logs ?? {});
+      },
+    },
   });
 
-  // STEP 4: Save the model in local browser storage
   await model.save("localstorage://ecg-disease-model");
-  console.log("✅ Model trained and saved in local storage!");
+  localStorage.setItem('ecg-class-labels', JSON.stringify(classLabels));
+  console.log("✅ Model trained and saved!");
 }
+
+

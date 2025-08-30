@@ -299,7 +299,7 @@ export class SessionAnalyzer {
     
     try {
       // Create features with patient info
-      const features = [
+      let features = [
         intervals.rr,
         intervals.bpm,
         intervals.pr,
@@ -315,22 +315,27 @@ export class SessionAnalyzer {
         patientInfo.weight / 100, // Normalize weight
         patientInfo.height / 200, // Normalize height
       ];
-      
-      // Make prediction
-      const inputTensor = tf.tensor2d([features], [1, features.length]);
+
+      // Pad or slice features to length 720
+      if (features.length < 720) {
+        features = features.concat(Array(720 - features.length).fill(0));
+      } else if (features.length > 720) {
+        features = features.slice(0, 720);
+      }
+      const inputTensor = tf.tensor3d([features.map(v => [v])], [1, 720, 1]);
       const outputTensor = this.model.predict(inputTensor) as tf.Tensor;
       const probabilities = await outputTensor.data();
-      
+
       // Get predicted class
       const predArray = Array.from(probabilities);
       const maxIndex = predArray.indexOf(Math.max(...predArray));
       const predictedClass = this.getClassLabel(maxIndex);
       const confidence = predArray[maxIndex] * 100;
-      
+
       // Cleanup tensors
       inputTensor.dispose();
       outputTensor.dispose();
-      
+
       return {
         prediction: predictedClass,
         confidence,
@@ -513,8 +518,13 @@ export class SessionAnalyzer {
         }
       }
       
-      // Create input tensor with correct shape
-      const inputTensor = tf.tensor2d([featureVector], [1, 10]);
+      
+          let paddedFeatures = featureVector.slice(0, 720);
+      if (paddedFeatures.length < 720) {
+        paddedFeatures = paddedFeatures.concat(Array(720 - paddedFeatures.length).fill(0));
+      }
+      const inputTensor = tf.tensor3d([paddedFeatures.map(v => [v])], [1, 720, 1]);
+      
       
       try {
         const prediction = this.model!.predict(inputTensor) as tf.Tensor;

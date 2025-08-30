@@ -85,8 +85,6 @@ export default function HomePage() {
     };
   }, []);
   
-  // Add your ECG monitor implementation here
-  // ...
   
   return (
     <div className="relative w-full h-screen overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">

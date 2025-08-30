@@ -10,7 +10,7 @@ import { PanTompkinsDetector } from '../lib/panTompkinsDetector';
 import { ECGIntervalCalculator, ECGIntervals } from '../lib/ecgIntervals';
 import * as tf from '@tensorflow/tfjs';
 import { checkModelExists } from '../lib/modelTester';
-import { classLabels } from '../lib/modelTrainer';
+import { zscoreNorm } from "../lib/modelTrainer";
 import SessionRecording, { PatientInfo, RecordingSession } from './SessionRecording';
 import { SessionAnalyzer, SessionAnalysisResults } from '../lib/sessionAnalyzer';
 import SessionReport from './SessionReport';
@@ -32,10 +32,11 @@ export default function EcgFullPanel() {
   const [peaksVisible, setPeaksVisible] = useState(true);
   const [timer, setTimer] = useState("00:00");
   const [showHRV, setShowHRV] = useState(false);
+  const [classLabels, setClassLabels] = useState<string[]>([]);
   const [showPQRST, setShowPQRST] = useState(false);
   const [showIntervals, setShowIntervals] = useState(false); // Add this state
   const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
-  const [sliderOpen, setSliderOpen] = useState(false);
+
   
   // Update this state for physiological state
   const [physioState, setPhysioState] = useState<{ state: string; confidence: number }>({ 
@@ -75,7 +76,14 @@ export default function EcgFullPanel() {
 
   // Auto Analyze state and toggle function
   const [autoAnalyze, setAutoAnalyze] = useState(false);
-  const toggleAutoAnalyze = () => setAutoAnalyze((prev) => !prev);
+  
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const labels = JSON.parse(localStorage.getItem('ecg-class-labels') || '[]');
+      setClassLabels(labels);
+    }
+  }, []);
 
   // Effect to run analyzeCurrent automatically if autoAnalyze is enabled
   useEffect(() => {
@@ -426,47 +434,61 @@ export default function EcgFullPanel() {
     }
   }
 
-  // Add this function to make predictions
   const analyzeCurrent = async () => {
-    if (!ecgModel || !ecgIntervals) return;
-    
+    console.log("analyzeCurrent called");
+    if (!ecgModel) {
+      console.log("No model loaded");
+      return;
+    }
+    // Use the last 720 ECG samples for prediction
+    const ecgWindow = dataCh0.current.slice(-720);
+    if (ecgWindow.length < 720) {
+      console.log("Not enough ECG data for prediction");
+      return;
+    }
+    // Normalize the window
+    const normWindow = zscoreNorm(ecgWindow);
+    // Shape for model: [1, 720, 1]
+    const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, 720, 1]);
+    console.log("Input tensor shape:", inputTensor.shape);
+
     try {
-      // Create input features array from current ECG data
-      const features = [
-        ecgIntervals.rr,
-        ecgIntervals.bpm,
-        ecgIntervals.pr,
-        ecgIntervals.qrs,
-        ecgIntervals.qt,
-        ecgIntervals.qtc,
-        stSegmentData?.deviation || 0,
-        hrvMetrics?.rmssd || 0,
-        hrvMetrics?.sdnn || 0,
-        hrvMetrics?.lfhf?.ratio || 0,
-      ];
-      
-      // Create tensor and make prediction
-      const inputTensor = tf.tensor2d([features], [1, 10]);
       const outputTensor = ecgModel.predict(inputTensor) as tf.Tensor;
+      console.log("Output tensor shape:", outputTensor.shape);
+
       const probabilities = await outputTensor.data();
-      
-      // Get predicted class
+      console.log("Probabilities array:", probabilities);
+
+      if (!probabilities || probabilities.length === 0) {
+        console.error("Model output is empty or invalid");
+        setModelPrediction({ prediction: "Analyzing", confidence: 0 });
+        return;
+      }
+
       const predArray = Array.from(probabilities);
       const maxIndex = predArray.indexOf(Math.max(...predArray));
+      console.log("Max index:", maxIndex, "Class labels:", classLabels);
+
+      if (maxIndex < 0 || maxIndex >= classLabels.length) {
+        console.error("Max index out of bounds for classLabels");
+        setModelPrediction({ prediction: "Analyzing", confidence: 0 });
+        return;
+      }
+
       const predictedClass = classLabels[maxIndex];
       const confidence = predArray[maxIndex] * 100;
-      
-      // Update state with prediction
+      console.log("Predicted class:", predictedClass, "Confidence:", confidence);
+
       setModelPrediction({
         prediction: predictedClass,
         confidence: confidence
       });
-      
-      // Cleanup tensors
+
       inputTensor.dispose();
       outputTensor.dispose();
     } catch (err) {
       console.error('Prediction failed:', err);
+      setModelPrediction({ prediction: "Analyzing", confidence: 0 });
     }
   };
 
@@ -1290,8 +1312,8 @@ export default function EcgFullPanel() {
               <span className="text-sm text-gray-300">ECG Classification:</span>
               <span className="font-bold text-lg" style={{ 
                 color: 
-                  modelPrediction.prediction === "Normal" ? "#22c55e" : 
-                  modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444" 
+                  ["Normal", "N"].includes(modelPrediction.prediction) ? "#22c55e" : 
+                  modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
               }}>
                 {modelPrediction.prediction}
               </span>
@@ -1302,8 +1324,8 @@ export default function EcgFullPanel() {
                 style={{ 
                   width: `${modelPrediction.confidence}%`,
                   backgroundColor: 
-                    modelPrediction.prediction === "Normal" ? "#22c55e" : 
-                    modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444" 
+                    ["Normal", "N"].includes(modelPrediction.prediction) ? "#22c55e" : 
+                    modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
                 }}
               ></div>
             </div>
@@ -1312,16 +1334,48 @@ export default function EcgFullPanel() {
             </p>
           </div>
           
-          {modelPrediction.prediction !== "Normal" && modelPrediction.prediction !== "Analyzing" && (
-            <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
-              <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
-              <p className="text-sm text-gray-300">
-                The AI model has detected patterns that may indicate {modelPrediction.prediction.toLowerCase()}.
-                Please consult with a healthcare professional for proper evaluation.
-              </p>
-            </div>
-          )}
-          
+         {!["Normal", "N", "Analyzing"].includes(modelPrediction.prediction) && (
+  (() => {
+    // Map prediction to a human-readable string
+    const predictionLabels: Record<string, string> = {
+      AFib: "Atrial Fibrillation",
+      PVC: "Premature Ventricular Contraction",
+      Bradycardia: "Slow Heart Rate (Bradycardia)",
+      Tachycardia: "Fast Heart Rate (Tachycardia)",
+      N: "Normal heartbeat",
+      R: "Right bundle branch block",
+      L: "Left bundle branch block",
+      // Add more mappings as needed
+    };
+    let readablePrediction = modelPrediction.prediction;
+    const key = readablePrediction?.toUpperCase();
+    if (key && predictionLabels[key]) {
+      readablePrediction = predictionLabels[key];
+    } else {
+      readablePrediction = "an unknown or unclassified ECG pattern";
+    }
+
+    return (
+      <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
+        <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
+        <p className="text-sm text-gray-300">
+          The AI model has detected patterns that may indicate <b>{readablePrediction}</b>.<br />
+          Please consult with a healthcare professional for proper evaluation.
+        </p>
+      </div>
+    );
+  })()
+)}
+{["Normal", "N"].includes(modelPrediction.prediction) && (
+  <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10">
+    <h4 className="text-sm font-medium text-green-400 mb-2">Normal ECG Pattern</h4>
+    <p className="text-sm text-gray-300">
+      The AI model has detected patterns that may indicate a <b>Normal heartbeat</b>.<br />
+      No abnormal rhythms detected in this window.
+    </p>
+  </div>
+)}
+
           <div className="mt-4 text-xs text-gray-500 italic">
             This is not a diagnostic tool. Results should be confirmed by medical professionals.
           </div>
@@ -1568,6 +1622,7 @@ export default function EcgFullPanel() {
                 case 'S': color = 'text-cyan-400'; break;
                 case 'T': color = 'text-purple-400'; break;
                 default: color = 'text-white';
+              break;
               }
 
               return (
@@ -1588,7 +1643,7 @@ export default function EcgFullPanel() {
             return null;
           })}
         </div>
-      )}
+           )}
 
     
     
