@@ -1292,21 +1292,30 @@ export default function EcgFullPanel() {
       )}
 
       {/* AI Prediction Results Panel */}
-      {modelPrediction && showAIAnalysis && (
-        <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-              <Zap className="w-5 h-5 text-yellow-400" />
-              AI Analysis
-            </h3>
-            <button
-              onClick={() => setShowAIAnalysis(false)}
-              className="text-gray-400 hover:text-white"
-            >
-              ✕
-            </button>
-          </div>
-          
+    {showAIAnalysis && (
+  <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
+    <div className="flex items-center justify-between mb-4">
+      <h3 className="text-lg font-bold flex items-center gap-2">
+        <Zap className="w-5 h-5 text-yellow-400" />
+        AI Analysis
+      </h3>
+      <button
+        onClick={() => setShowAIAnalysis(false)}
+        className="text-gray-400 hover:text-white"
+      >
+        ✕
+      </button>
+    </div>
+    {(bpmDisplay === "-- BPM" || signalQuality !== "good") ? (
+      <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
+        <span className="font-bold text-lg text-yellow-400">Analyzing...</span>
+        <p className="text-xs text-gray-400 mt-2">
+          Waiting for correct BPM and good signal quality to run AI analysis.
+        </p>
+      </div>
+    ) : (
+      modelPrediction && (
+        <>
           <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm text-gray-300">ECG Classification:</span>
@@ -1333,54 +1342,52 @@ export default function EcgFullPanel() {
               Confidence: {modelPrediction.confidence.toFixed(1)}%
             </p>
           </div>
-          
-         {!["Normal", "N", "Analyzing"].includes(modelPrediction.prediction) && (
-  (() => {
-    // Map prediction to a human-readable string
-    const predictionLabels: Record<string, string> = {
-      AFib: "Atrial Fibrillation",
-      PVC: "Premature Ventricular Contraction",
-      Bradycardia: "Slow Heart Rate (Bradycardia)",
-      Tachycardia: "Fast Heart Rate (Tachycardia)",
-      N: "Normal heartbeat",
-      R: "Right bundle branch block",
-      L: "Left bundle branch block",
-      // Add more mappings as needed
-    };
-    let readablePrediction = modelPrediction.prediction;
-    const key = readablePrediction?.toUpperCase();
-    if (key && predictionLabels[key]) {
-      readablePrediction = predictionLabels[key];
-    } else {
-      readablePrediction = "an unknown or unclassified ECG pattern";
-    }
-
-    return (
-      <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
-        <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
-        <p className="text-sm text-gray-300">
-          The AI model has detected patterns that may indicate <b>{readablePrediction}</b>.<br />
-          Please consult with a healthcare professional for proper evaluation.
-        </p>
-      </div>
-    );
-  })()
-)}
-{["Normal", "N"].includes(modelPrediction.prediction) && (
-  <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10">
-    <h4 className="text-sm font-medium text-green-400 mb-2">Normal ECG Pattern</h4>
-    <p className="text-sm text-gray-300">
-      The AI model has detected patterns that may indicate a <b>Normal heartbeat</b>.<br />
-      No abnormal rhythms detected in this window.
-    </p>
+          {!["Normal", "N", "Analyzing"].includes(modelPrediction.prediction) && (
+            (() => {
+              const predictionLabels: Record<string, string> = {
+                AFib: "Atrial Fibrillation",
+                PVC: "Premature Ventricular Contraction",
+                Bradycardia: "Slow Heart Rate (Bradycardia)",
+                Tachycardia: "Fast Heart Rate (Tachycardia)",
+                N: "Normal heartbeat",
+                R: "Right bundle branch block",
+                L: "Left bundle branch block",
+              };
+              let readablePrediction = modelPrediction.prediction;
+              const key = readablePrediction?.toUpperCase();
+              if (key && predictionLabels[key]) {
+                readablePrediction = predictionLabels[key];
+              } else {
+                readablePrediction = "an unknown or unclassified ECG pattern";
+              }
+              return (
+                <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
+                  <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
+                  <p className="text-sm text-gray-300">
+                    The AI model has detected patterns that may indicate <b>{readablePrediction}</b>.<br />
+                    Please consult with a healthcare professional for proper evaluation.
+                  </p>
+                </div>
+              );
+            })()
+          )}
+          {["Normal", "N"].includes(modelPrediction.prediction) && (
+            <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10">
+              <h4 className="text-sm font-medium text-green-400 mb-2">Normal ECG Pattern</h4>
+              <p className="text-sm text-gray-300">
+                The AI model has detected patterns that may indicate a <b>Normal heartbeat</b>.<br />
+                No abnormal rhythms detected in this window.
+              </p>
+            </div>
+          )}
+        </>
+      )
+    )}
+    <div className="mt-4 text-xs text-gray-500 italic">
+      This is not a diagnostic tool. Results should be confirmed by medical professionals.
+    </div>
   </div>
 )}
-
-          <div className="mt-4 text-xs text-gray-500 italic">
-            This is not a diagnostic tool. Results should be confirmed by medical professionals.
-          </div>
-        </div>
-      )}
 
       {/* ECG Intervals Panel */}
       {showIntervals && (
