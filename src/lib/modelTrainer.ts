@@ -94,13 +94,16 @@ function augment(window: number[], label?: string) {
 }
 
 // --- 4. Prepare Dataset ---
-let classLabels: string[] = [];
-export { classLabels };
+// Use fixed classLabels in the required order
+export const classLabels = ["+", "N", "/", "f", "~", "L", "V", "R", "A", "x", "F"];
 
+// Remove previous let classLabels: string[] = []; and export { classLabels };
+
+// Update prepareDataset to use classLabels directly
 function prepareDataset(
   windows: number[][],
   labels: string[],
-  uniqueLabels: string[]
+  uniqueLabels: string[] = classLabels // default to fixed labels
 ) {
   if (!windows.length) {
     throw new Error("prepareDataset: windows array is empty.");
@@ -112,14 +115,13 @@ function prepareDataset(
     let win = zscoreNorm(w);
     win = augment(win, labels[i]);
     xs.push(win.map((v) => [v])); // shape [windowSize, 1]
-    const labelIndex = uniqueLabels.indexOf(labels[i]);
+    const labelIndex = classLabels.indexOf(labels[i]);
     ys.push(labelIndex >= 0 ? labelIndex : 0);
   });
 
-  // Fix: Explicitly provide shape to tensor3d
   return {
     xs: tf.tensor3d(xs, [xs.length, windows[0].length, 1]),
-    ys: tf.oneHot(tf.tensor1d(ys, "int32"), uniqueLabels.length),
+    ys: tf.oneHot(tf.tensor1d(ys, "int32"), classLabels.length),
   };
 }
 
@@ -240,17 +242,11 @@ export async function loadAllDataBatched({ batchSize = 100, onProgress, selected
 
 // Usage in trainECGModel:
 export async function trainECGModel(onEpoch?: (epoch: number, logs: tf.Logs) => void, onProgress?: (current: number, total: number) => void, selectedIndices?: number[]) {
-  // Only load a small batch by default, or use selectedIndices
   await loadAllDataBatched({ batchSize: 100, onProgress, selectedIndices });
 
-  // Unique labels across all files
-  let uniqueLabels = Array.from(new Set(allLabels));
-  if (uniqueLabels.length < 2) {
-    console.warn("⚠️ Only one class found, adding dummy");
-    uniqueLabels.push("Other");
-  }
-  classLabels = uniqueLabels;
-  console.log("Detected classes:", uniqueLabels);
+  // Use fixed classLabels
+  const uniqueLabels = classLabels;
+  console.log("Using fixed class labels:", uniqueLabels);
 
   // Prepare dataset
   const { xs, ys } = prepareDataset(allWindows, allLabels, uniqueLabels);
@@ -463,18 +459,15 @@ console.log(`Mean test accuracy: ${(foldAccuracies.reduce((a, b) => a + b, 0) / 
 
 // --- Incremental Training --- //
 export async function trainECGModelIncremental(onEpoch?: (epoch: number, logs: tf.Logs) => void) {
-  // Detect all unique labels first (optional, or use a fixed list)
-  let allLabelsSet = new Set<string>();
-  const filePairs = getFilePairs();
-  for (const pair of filePairs) {
-    const labels = await loadLabels(pair.ann);
-    labels.forEach(l => allLabelsSet.add(l));
-  }
-  classLabels = Array.from(allLabelsSet);
-  if (classLabels.length < 2) classLabels.push("Other");
+  // Use fixed classLabels
+  // Remove dynamic detection
+  // classLabels = Array.from(allLabelsSet); // Remove this line
 
   // Build model once
   const model = buildModel(windowSize, classLabels.length);
+
+  // Get all file pairs to train on
+  const filePairs = getFilePairs();
 
   // Train on each file sequentially
   for (const pair of filePairs) {

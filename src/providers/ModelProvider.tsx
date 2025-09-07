@@ -56,20 +56,25 @@ export function ModelProvider({ children }: { children: ReactNode }) {
   // Function to make predictions
   const predict = async (features: number[]) => {
     if (!model) return null;
-    
+
     try {
-      // Convert features to tensor
-      const inputTensor = tf.tensor2d([features], [1, 10]);
-      
+      // Ensure features is length 720
+      if (features.length !== 720) {
+        throw new Error('Input features must be an array of length 720');
+      }
+
+      // Reshape to [1, 720, 1]
+      const inputTensor = tf.tensor(features, [1, 720, 1]);
+
       // Run prediction
       const outputTensor = model.predict(inputTensor) as tf.Tensor;
       const probabilities = await outputTensor.data();
-      
+
       // Get class with highest probability
       const predictionArray = Array.from(probabilities);
       const maxProbIndex = predictionArray.indexOf(Math.max(...predictionArray));
       const predictedClass = classLabels[maxProbIndex];
-      
+
       // Create result object with all probabilities
       const result = {
         prediction: predictedClass,
@@ -79,11 +84,11 @@ export function ModelProvider({ children }: { children: ReactNode }) {
           probability: predictionArray[index] * 100
         })).sort((a, b) => b.probability - a.probability)
       };
-      
+
       // Cleanup tensors
       inputTensor.dispose();
       outputTensor.dispose();
-      
+
       return result;
     } catch (err) {
       console.error('Prediction error:', err);

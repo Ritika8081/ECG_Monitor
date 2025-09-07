@@ -538,18 +538,26 @@ export default function EcgFullPanel() {
   // Add this before the return statement in your EcgFullPanel component
   const renderAbnormalityWarnings = (intervals: ECGIntervals) => {
     const warnings = [];
-    
+
+    // QRS wide: check AI prediction for R/L
+    if (intervals.status.qrs === 'wide') {
+      if (modelPrediction?.prediction === "R") {
+        warnings.push({ text: 'Right bundle branch block (RBBB)', color: 'text-red-400' });
+      } else if (modelPrediction?.prediction === "L") {
+        warnings.push({ text: 'Left bundle branch block (LBBB)', color: 'text-red-400' });
+      } else {
+        warnings.push({ text: 'Possible bundle branch block', color: 'text-red-400' });
+      }
+    }
+
     if (intervals.status.pr === 'long') 
       warnings.push({ text: 'Possible 1st degree AV block', color: 'text-red-400' });
-    
-    if (intervals.status.qrs === 'wide') 
-      warnings.push({ text: 'Possible bundle branch block', color: 'text-red-400' });
-    
+
     if (intervals.status.qtc === 'prolonged') 
       warnings.push({ text: 'QT prolongation - arrhythmia risk', color: 'text-red-400' });
-    
+
     if (warnings.length === 0) return null;
-    
+
     return (
       <div className="mt-4 p-3 rounded-lg border border-red-500/30 bg-red-500/10">
         <h4 className="text-sm font-medium text-red-400 mb-2">Potential Findings:</h4>
@@ -1321,7 +1329,7 @@ export default function EcgFullPanel() {
               <span className="text-sm text-gray-300">ECG Classification:</span>
               <span className="font-bold text-lg" style={{ 
                 color: 
-                  ["Normal", "N"].includes(modelPrediction.prediction) ? "#22c55e" : 
+                  ["N"].includes(modelPrediction.prediction) ? "#22c55e" : 
                   modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
               }}>
                 {modelPrediction.prediction}
@@ -1333,7 +1341,7 @@ export default function EcgFullPanel() {
                 style={{ 
                   width: `${modelPrediction.confidence}%`,
                   backgroundColor: 
-                    ["Normal", "N"].includes(modelPrediction.prediction) ? "#22c55e" : 
+                    ["N"].includes(modelPrediction.prediction) ? "#22c55e" : 
                     modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
                 }}
               ></div>
@@ -1342,44 +1350,56 @@ export default function EcgFullPanel() {
               Confidence: {modelPrediction.confidence.toFixed(1)}%
             </p>
           </div>
-          {!["Normal", "N", "Analyzing"].includes(modelPrediction.prediction) && (
-            (() => {
-              const predictionLabels: Record<string, string> = {
-                AFib: "Atrial Fibrillation",
-                PVC: "Premature Ventricular Contraction",
-                Bradycardia: "Slow Heart Rate (Bradycardia)",
-                Tachycardia: "Fast Heart Rate (Tachycardia)",
-                N: "Normal heartbeat",
-                R: "Right bundle branch block",
-                L: "Left bundle branch block",
-              };
-              let readablePrediction = modelPrediction.prediction;
-              const key = readablePrediction?.toUpperCase();
-              if (key && predictionLabels[key]) {
-                readablePrediction = predictionLabels[key];
+          {/* Use your class label mapping here */}
+          {(() => {
+            const predictionLabels: Record<string, string> = {
+              "+": "Paced beat",
+              "N": "Normal beat",
+              "/": "Unclassifiable",
+              "f": "Fusion beat",
+              "~": "Artifact/noise",
+              "L": "Left bundle branch block (LBBB)",
+              "V": "Premature ventricular contraction (PVC)",
+              "R": "Right bundle branch block (RBBB)",
+              "A": "Atrial premature beat",
+              "x": "Unknown/other",
+              "F": "Atrial fibrillation (AFib)"
+            };
+            const pred = modelPrediction.prediction;
+            if (predictionLabels[pred]) {
+              if (pred === "N") {
+                return (
+                  <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10">
+                    <h4 className="text-sm font-medium text-green-400 mb-2">Normal ECG Pattern</h4>
+                    <p className="text-sm text-gray-300">
+                      The AI model has detected patterns that may indicate a <b>{predictionLabels[pred]}</b>.<br />
+                      No abnormal rhythms detected in this window.
+                    </p>
+                  </div>
+                );
               } else {
-                readablePrediction = "an unknown or unclassified ECG pattern";
+                return (
+                  <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
+                    <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
+                    <p className="text-sm text-gray-300">
+                      The AI model has detected patterns that may indicate <b>{predictionLabels[pred]}</b>.<br />
+                      Please consult with a healthcare professional for proper evaluation.
+                    </p>
+                  </div>
+                );
               }
+            } else {
               return (
-                <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
-                  <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
+                <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
+                  <h4 className="text-sm font-medium text-yellow-400 mb-2">Unknown Pattern</h4>
                   <p className="text-sm text-gray-300">
-                    The AI model has detected patterns that may indicate <b>{readablePrediction}</b>.<br />
-                    Please consult with a healthcare professional for proper evaluation.
+                    The AI model detected an unknown or unclassified ECG pattern.<br />
+                    Please consult with a healthcare professional for further evaluation.
                   </p>
                 </div>
               );
-            })()
-          )}
-          {["Normal", "N"].includes(modelPrediction.prediction) && (
-            <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10">
-              <h4 className="text-sm font-medium text-green-400 mb-2">Normal ECG Pattern</h4>
-              <p className="text-sm text-gray-300">
-                The AI model has detected patterns that may indicate a <b>Normal heartbeat</b>.<br />
-                No abnormal rhythms detected in this window.
-              </p>
-            </div>
-          )}
+            }
+          })()}
         </>
       )
     )}

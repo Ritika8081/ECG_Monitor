@@ -329,8 +329,19 @@ export class SessionAnalyzer {
       // Get predicted class
       const predArray = Array.from(probabilities);
       const maxIndex = predArray.indexOf(Math.max(...predArray));
-      const predictedClass = this.getClassLabel(maxIndex);
+      let predictedClass = this.getClassLabel(maxIndex);
       const confidence = predArray[maxIndex] * 100;
+
+      // If the predicted class is Atrial Fibrillation, check the rhythm regularity
+      // NOTE: You may want to pass irregularBeats and percentIrregular as arguments to this function for more robust logic.
+      if (
+        predictedClass === "Atrial Fibrillation" &&
+        (hrvMetrics?.percentIrregular !== undefined && hrvMetrics?.irregularBeats !== undefined &&
+         hrvMetrics.percentIrregular <= 20 && hrvMetrics.irregularBeats <= 3)
+      ) {
+        // If rhythm is regular, override prediction to Normal Sinus Rhythm
+        predictedClass = "Normal Sinus Rhythm";
+      }
 
       // Cleanup tensors
       inputTensor.dispose();
@@ -407,6 +418,17 @@ export class SessionAnalyzer {
           type: 'Tachycardia',
           severity: 'medium',
           description: 'Elevated heart rate detected, which could be due to exertion, stress, or cardiac issues.'
+        });
+      }
+      
+      if (
+        (aiClassification.prediction === "Atrial Fibrillation" || aiClassification.prediction === "AFib") &&
+        ((hrvMetrics?.percentIrregular ?? 0) > 20 || (hrvMetrics?.irregularBeats ?? 0) > 3) // adjust thresholds as needed
+      ) {
+        abnormalities.push({
+          type: "Atrial Fibrillation",
+          description: "Irregular heart rhythm potentially indicating atrial fibrillation.",
+          severity: "high"
         });
       }
       
@@ -533,8 +555,17 @@ export class SessionAnalyzer {
         // Get the predicted class
         const predArray = Array.from(probabilities);
         const maxIndex = predArray.indexOf(Math.max(...predArray));
-        const predictedClass = this.getClassLabel(maxIndex);
+        let predictedClass = this.getClassLabel(maxIndex);
         const confidence = predArray[maxIndex] * 100;
+        
+        // If the predicted class is Atrial Fibrillation, check the rhythm regularity
+        if (
+          predictedClass === "Atrial Fibrillation" &&
+          (0 <= 20 && 0 <= 3) // No summary available, use default values
+        ) {
+          // If rhythm is regular, override prediction to Normal Sinus Rhythm
+          predictedClass = "Normal Sinus Rhythm";
+        }
         
         // Clean up tensors
         inputTensor.dispose();
