@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { trainECGModelIncremental } from '@/lib/modelTrainer';
+import { trainBeatLevelECGModelAllFiles } from '@/lib/modelTrainer';
 
 import { testLoadModel, checkModelExists } from '../../lib/modelTester';
 import ModelInspector from '../../components/ModelInspector';
@@ -29,7 +29,7 @@ export default function TrainPage() {
     
     try {
       console.log("🚀 Starting training...");
-      await trainECGModelIncremental();
+      await trainBeatLevelECGModelAllFiles();
       console.log("✅ Training completed!");
       setTrainingComplete(true);
       setModelExists(true);

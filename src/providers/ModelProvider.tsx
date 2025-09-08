@@ -3,7 +3,9 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import { classLabels } from '@/lib/modelTrainer';
+// TODO: Replace with the correct import or definition for classLabels
+const classLabels = ['ClassA', 'ClassB', 'ClassC']; // Example: define your class labels here
+// import { classLabels } from '@/lib/modelTrainer'; // Uncomment if available
 
 type ModelContextType = {
   model: tf.LayersModel | null;

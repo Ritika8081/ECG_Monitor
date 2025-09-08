@@ -6,6 +6,16 @@ import {
   Zap, AlertTriangle, ClipboardList
 } from 'lucide-react';
 import * as tf from '@tensorflow/tfjs';
+import { AAMI_CLASSES } from "../lib/modelTrainer"; // Add this import
+
+// Add this mapping for readable labels
+const predictionLabels: Record<string, string> = {
+  "Normal": "Normal beat",
+  "Supraventricular": "Supraventricular ectopic beat",
+  "Ventricular": "Ventricular ectopic beat",
+  "Fusion": "Fusion beat",
+  "Other": "Other/unknown beat"
+};
 
 interface SessionReportProps {
   analysisResults: SessionAnalysisResults;
@@ -164,7 +174,7 @@ export default function SessionReport({
               {/* ECG Pattern Analysis & Abnormalities */}
               <div className="flex flex-col h-full col-span-2">
                 <div className={`p-2 rounded-lg border flex flex-col gap-2 flex-1 ${
-                  analysisResults.aiClassification.prediction === "Normal Sinus Rhythm"
+                  analysisResults.aiClassification.prediction === "Normal"
                     ? 'bg-green-500/10 border-green-500/30'
                     : 'bg-yellow-500/10 border-yellow-500/30'
                 }`}>
@@ -176,10 +186,10 @@ export default function SessionReport({
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-gray-300 text-xs">Classification:</span>
                       <span className="font-bold text-sm" style={{ 
-                        color: analysisResults.aiClassification.prediction === "Normal Sinus Rhythm" 
+                        color: analysisResults.aiClassification.prediction === "Normal" 
                           ? "#22c55e" : "#f59e0b" 
                       }}>
-                        {analysisResults.aiClassification.prediction}
+                        {predictionLabels[analysisResults.aiClassification.prediction] || analysisResults.aiClassification.prediction}
                       </span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-1 mb-1">
@@ -187,7 +197,7 @@ export default function SessionReport({
                         className="h-1 rounded-full" 
                         style={{ 
                           width: `${analysisResults.aiClassification.confidence}%`,
-                          backgroundColor: analysisResults.aiClassification.prediction === "Normal Sinus Rhythm" 
+                          backgroundColor: analysisResults.aiClassification.prediction === "Normal" 
                             ? "#22c55e" : "#f59e0b"
                         }}
                       ></div>

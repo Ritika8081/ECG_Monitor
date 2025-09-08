@@ -14,6 +14,7 @@ import { zscoreNorm } from "../lib/modelTrainer";
 import SessionRecording, { PatientInfo, RecordingSession } from './SessionRecording';
 import { SessionAnalyzer, SessionAnalysisResults } from '../lib/sessionAnalyzer';
 import SessionReport from './SessionReport';
+import { AAMI_CLASSES } from "../lib/modelTrainer"; // <-- Import your model classes
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -32,7 +33,7 @@ export default function EcgFullPanel() {
   const [peaksVisible, setPeaksVisible] = useState(true);
   const [timer, setTimer] = useState("00:00");
   const [showHRV, setShowHRV] = useState(false);
-  const [classLabels, setClassLabels] = useState<string[]>([]);
+  const [classLabels, setClassLabels] = useState<string[]>(AAMI_CLASSES); // <-- Use AAMI_CLASSES directly
   const [showPQRST, setShowPQRST] = useState(false);
   const [showIntervals, setShowIntervals] = useState(false); // Add this state
   const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
@@ -211,7 +212,14 @@ export default function EcgFullPanel() {
     const maxAbs = Math.max(...dataCh0.current.map(Math.abs), 0.1);
     return maxAbs > 0.9 ? 0.9 / maxAbs : 1;
   }
-
+function mapSymbolToAAMI(symbol: string): string {
+  if (['N', '.', 'L', 'R', 'e', 'j'].includes(symbol)) return 'Normal';
+  if (['A', 'a', 'J', 'S'].includes(symbol)) return 'Supraventricular';
+  if (['V', 'E', 'r'].includes(symbol)) return 'Ventricular';
+  if (['F'].includes(symbol)) return 'Fusion';
+  if (['Q', '/', 'f', 'n'].includes(symbol)) return 'Other';
+  return 'Other';
+}
   // Add this function to see what data we have
   function updatePeaks() {
     // Add debug for signal diagnostics
@@ -437,19 +445,19 @@ export default function EcgFullPanel() {
   const analyzeCurrent = async () => {
     console.log("analyzeCurrent called");
     if (!ecgModel) {
-      console.log("No model loaded");
+      console.log("No model loaded")
       return;
     }
-    // Use the last 720 ECG samples for prediction
-    const ecgWindow = dataCh0.current.slice(-720);
-    if (ecgWindow.length < 720) {
-      console.log("Not enough ECG data for prediction");
-      return;
-    }
-    // Normalize the window
-    const normWindow = zscoreNorm(ecgWindow);
-    // Shape for model: [1, 720, 1]
-    const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, 720, 1]);
+    const inputShape = ecgModel.inputs[0].shape;
+const MODEL_INPUT_LENGTH = inputShape[1] || 720;
+
+const ecgWindow = dataCh0.current.slice(-MODEL_INPUT_LENGTH);
+if (ecgWindow.length < MODEL_INPUT_LENGTH) {
+  console.log("Not enough ECG data for prediction");
+  return;
+}
+const normWindow = zscoreNorm(ecgWindow);
+const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_INPUT_LENGTH, 1]);
     console.log("Input tensor shape:", inputTensor.shape);
 
     try {
@@ -475,9 +483,9 @@ export default function EcgFullPanel() {
         return;
       }
 
-      const predictedClass = classLabels[maxIndex];
+      const predictedSymbol = classLabels[maxIndex]; // This is likely 'N', 'V', etc.
+      const predictedClass = mapSymbolToAAMI(predictedSymbol); // Now 'Normal', 'Ventricular', etc.
       const confidence = predArray[maxIndex] * 100;
-      console.log("Predicted class:", predictedClass, "Confidence:", confidence);
 
       setModelPrediction({
         prediction: predictedClass,
@@ -1329,7 +1337,7 @@ export default function EcgFullPanel() {
               <span className="text-sm text-gray-300">ECG Classification:</span>
               <span className="font-bold text-lg" style={{ 
                 color: 
-                  ["N"].includes(modelPrediction.prediction) ? "#22c55e" : 
+                  modelPrediction.prediction === "Normal" ? "#22c55e" : 
                   modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
               }}>
                 {modelPrediction.prediction}
@@ -1341,7 +1349,7 @@ export default function EcgFullPanel() {
                 style={{ 
                   width: `${modelPrediction.confidence}%`,
                   backgroundColor: 
-                    ["N"].includes(modelPrediction.prediction) ? "#22c55e" : 
+                    modelPrediction.prediction === "Normal" ? "#22c55e" : 
                     modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
                 }}
               ></div>
@@ -1353,26 +1361,20 @@ export default function EcgFullPanel() {
           {/* Use your class label mapping here */}
           {(() => {
             const predictionLabels: Record<string, string> = {
-              "+": "Paced beat",
-              "N": "Normal beat",
-              "/": "Unclassifiable",
-              "f": "Fusion beat",
-              "~": "Artifact/noise",
-              "L": "Left bundle branch block (LBBB)",
-              "V": "Premature ventricular contraction (PVC)",
-              "R": "Right bundle branch block (RBBB)",
-              "A": "Atrial premature beat",
-              "x": "Unknown/other",
-              "F": "Atrial fibrillation (AFib)"
+              "Normal": "Normal beat",
+              "Supraventricular": "Supraventricular ectopic beat",
+              "Ventricular": "Ventricular ectopic beat",
+              "Fusion": "Fusion beat",
+              "Other": "Other/unknown beat"
             };
             const pred = modelPrediction.prediction;
             if (predictionLabels[pred]) {
-              if (pred === "N") {
+              if (pred === "Normal") {
                 return (
                   <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10">
                     <h4 className="text-sm font-medium text-green-400 mb-2">Normal ECG Pattern</h4>
                     <p className="text-sm text-gray-300">
-                      The AI model has detected patterns that may indicate a <b>{predictionLabels[pred]}</b>.<br />
+                      The AI model has detected a <b>{predictionLabels[pred]}</b>.<br />
                       No abnormal rhythms detected in this window.
                     </p>
                   </div>
@@ -1382,7 +1384,7 @@ export default function EcgFullPanel() {
                   <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
                     <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
                     <p className="text-sm text-gray-300">
-                      The AI model has detected patterns that may indicate <b>{predictionLabels[pred]}</b>.<br />
+                      The AI model has detected a <b>{predictionLabels[pred]}</b>.<br />
                       Please consult with a healthcare professional for proper evaluation.
                     </p>
                   </div>
@@ -1676,4 +1678,13 @@ export default function EcgFullPanel() {
     
     </div>
   );
+}
+
+function mapSymbolToAAMI(symbol: string): string {
+  if (['N', '.', 'L', 'R', 'e', 'j'].includes(symbol)) return 'Normal';
+  if (['A', 'a', 'J', 'S'].includes(symbol)) return 'Supraventricular';
+  if (['V', 'E', 'r'].includes(symbol)) return 'Ventricular';
+  if (['F'].includes(symbol)) return 'Fusion';
+  if (['Q', '/', 'f', 'n'].includes(symbol)) return 'Other';
+  return 'Other';
 }
