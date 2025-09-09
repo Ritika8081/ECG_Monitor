@@ -449,7 +449,7 @@ function mapSymbolToAAMI(symbol: string): string {
       return;
     }
     const inputShape = ecgModel.inputs[0].shape;
-const MODEL_INPUT_LENGTH = inputShape[1] || 720;
+const MODEL_INPUT_LENGTH = inputShape[1] || 187;
 
 const ecgWindow = dataCh0.current.slice(-MODEL_INPUT_LENGTH);
 if (ecgWindow.length < MODEL_INPUT_LENGTH) {
