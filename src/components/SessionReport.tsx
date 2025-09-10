@@ -17,10 +17,11 @@ const predictionLabels: Record<string, string> = {
   "Other": "Other/unknown beat"
 };
 
-interface SessionReportProps {
+export interface SessionReportProps {
   analysisResults: SessionAnalysisResults;
   patientInfo: PatientInfo;
   sessionDate: Date;
+  recordingTime: string; // <-- Add this line
   onClose: () => void;
   onSaveReport: () => void;
 }

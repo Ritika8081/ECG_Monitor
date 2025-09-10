@@ -37,8 +37,16 @@ export interface SessionRecordingProps {
   onStopRecording: () => RecordingSession | null;
   isRecording: boolean;
   recordingTime: string;
-  sessionResults?: SessionAnalysisResults | null;             
-  setShowSessionReport?: React.Dispatch<React.SetStateAction<boolean>>;  
+  setShowPatientInfo: React.Dispatch<React.SetStateAction<boolean>>; // <-- Add this line
+}
+
+interface SessionReportProps {
+  analysisResults: SessionAnalysisResults;
+  patientInfo: PatientInfo;
+  sessionDate: Date;
+  recordingTime: string; // <-- Add this prop
+  onClose: () => void;
+  onSaveReport: () => void;
 }
 
 export default function SessionRecording({
@@ -46,9 +54,9 @@ export default function SessionRecording({
   onStartRecording,
   onStopRecording,
   isRecording,
-  recordingTime
+  recordingTime,
+  setShowPatientInfo
 }: SessionRecordingProps) {
-  const [showPatientInfo, setShowPatientInfo] = useState(false);
   const [patientInfo, setPatientInfo] = useState<PatientInfo>({
     age: 30,
     gender: 'male',
@@ -136,59 +144,10 @@ export default function SessionRecording({
   
   return (
     <>
-      {/* Recording Controls */}
-      <div className="fixed bottom-2 left-1/2 transform -translate-x-1/2 z-50
-                    bg-black/70 backdrop-blur-md border border-white/20 rounded-full
-                    py-2 px-4 flex items-center gap-4">
-        {!isRecording ? (
-          <>
-            <button
-              onClick={() => setShowPatientInfo(true)}
-              disabled={!connected}
-              className={`flex items-center gap-2 rounded-full px-4 py-2
-                        ${connected ? 'bg-gray-600 text-white' :
-                                    'bg-gray-700 text-gray-400 cursor-not-allowed'}`}
-            >
-              <Play className="w-5 h-5" fill="currentColor" />
-              Start Recording
-            </button>
-            
-            {/* Add View Results button that appears if sessionResults exists */}
-            {sessionResults && (
-              <button
-                onClick={() => setShowSessionReport(true)}
-                className="flex items-center gap-2 rounded-full px-4 py-2
-                          bg-blue-500 hover:bg-blue-600 text-white"
-              >
-                <BarChart3 className="w-5 h-5" />
-                View Results
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <button
-              onClick={handleStopRecording}
-              className="flex items-center gap-2 rounded-full px-4 py-2
-                        bg-red-500 hover:bg-red-600 text-white"
-            >
-              <Square className="w-5 h-5" />
-              Stop
-            </button>
-            <div className="flex items-center gap-2 text-white">
-              <Clock className="w-4 h-4 text-red-400" />
-              <span className="font-mono">{recordingTime}</span>
-            </div>
-            <div className="animate-pulse flex gap-2 items-center text-red-400">
-              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-              Recording
-            </div>
-          </>
-        )}
-      </div>
+      
       
       {/* Patient Info Modal */}
-      {showPatientInfo && (
+      
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-white/20 rounded-xl p-6 max-w-lg w-full">
             <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -318,68 +277,9 @@ export default function SessionRecording({
             </div>
           </div>
         </div>
-      )}
+    
       
-      {/* Session Results Report */}
-      {showSessionReport && sessionResults && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-white/20 rounded-xl p-6 max-w-lg w-full overflow-auto max-h-[90vh]">
-            <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-green-400" />
-              Session Results
-            </h2>
-            
-            {/* Add detailed results view here.
-                For now, just showing dummy values. Replace with actual data. */}
-            <div className="text-gray-300 text-sm mb-4">
-              <p><strong>Duration:</strong> {sessionResults.duration} seconds</p>
-              <p><strong>Start Time:</strong> {new Date(sessionResults.startTime).toLocaleString()}</p>
-              <p><strong>End Time:</strong> {sessionResults.endTime ? new Date(sessionResults.endTime).toLocaleString() : 'In Progress'}</p>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">HRV Metrics</h3>
-                <p><strong>RMSSD:</strong> {sessionResults.hrvMetrics?.rmssd.toFixed(2)} ms</p>
-                <p><strong>SDNN:</strong> {sessionResults.hrvMetrics?.sdnn.toFixed(2)} ms</p>
-                <p><strong>LF/HF Ratio:</strong> {sessionResults.hrvMetrics?.lfhf.ratio.toFixed(2)}</p>
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-semibold text-white mb-2">ECG Intervals</h3>
-                <p><strong>RR Interval:</strong> {sessionResults.ecgIntervals?.rr.toFixed(2)} ms</p>
-                <p><strong>BPM:</strong> {sessionResults.ecgIntervals?.bpm.toFixed(2)}</p>
-                <p><strong>PR Interval:</strong> {sessionResults.ecgIntervals?.pr.toFixed(2)} ms</p>
-                <p><strong>QRS Duration:</strong> {sessionResults.ecgIntervals?.qrs.toFixed(2)} ms</p>
-                <p><strong>QT Interval:</strong> {sessionResults.ecgIntervals?.qt.toFixed(2)} ms</p>
-                <p><strong>QTc Interval:</strong> {sessionResults.ecgIntervals?.qtc.toFixed(2)} ms</p>
-              </div>
-            </div>
-            
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold text-white mb-2">ST Segment Data</h3>
-              <p><strong>Deviation:</strong> {sessionResults.stSegmentData?.deviation.toFixed(2)} mm</p>
-              <p><strong>Status:</strong> {sessionResults.stSegmentData?.status}</p>
-            </div>
-            
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowSessionReport(false)}
-                className="px-4 py-2 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800"
-              >
-                Close
-              </button>
-              
-              <button
-                onClick={() => {/* Add export functionality here */}}
-                className="px-4 py-2 rounded-lg bg-green-500 hover:bg-green-600 text-white"
-              >
-                Export Results
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+     
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import { Heart, Bluetooth, Eye, EyeOff, Activity, Timer, Zap, BarChart3, TrendingUp } from "lucide-react";
+import { Heart, Bluetooth, Eye, EyeOff, Activity, Timer, Zap, BarChart3, TrendingUp, Play, Square, Clock } from "lucide-react";
 import { WebglPlot, WebglLine, ColorRGBA } from "webgl-plot";
 import { BPMCalculator } from '../lib/bpmCalculator';
 import { NotchFilter, ECGFilter } from '../lib/filters';
@@ -38,11 +38,11 @@ export default function EcgFullPanel() {
   const [showIntervals, setShowIntervals] = useState(false); // Add this state
   const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
 
-  
+
   // Update this state for physiological state
-  const [physioState, setPhysioState] = useState<{ state: string; confidence: number }>({ 
-    state: "Analyzing", 
-    confidence: 0 
+  const [physioState, setPhysioState] = useState<{ state: string; confidence: number }>({
+    state: "Analyzing",
+    confidence: 0
   });
 
   type HRVMetrics = {
@@ -77,7 +77,7 @@ export default function EcgFullPanel() {
 
   // Auto Analyze state and toggle function
   const [autoAnalyze, setAutoAnalyze] = useState(false);
-  
+
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -128,6 +128,10 @@ export default function EcgFullPanel() {
 
   // Add this state inside your component
   const [stSegmentData, setSTSegmentData] = useState<STSegmentData | null>(null);
+
+  // Add to EcgFullPanel component
+  const [beatPredictions, setBeatPredictions] = useState<{ prediction: string, confidence: number }[]>([]);
+  const ROLLING_WINDOW_SIZE = 10; // Number of beats to aggregate (e.g., last 10 beats)
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -212,27 +216,38 @@ export default function EcgFullPanel() {
     const maxAbs = Math.max(...dataCh0.current.map(Math.abs), 0.1);
     return maxAbs > 0.9 ? 0.9 / maxAbs : 1;
   }
-function mapSymbolToAAMI(symbol: string): string {
-  if (['N', '.', 'L', 'R', 'e', 'j'].includes(symbol)) return 'Normal';
-  if (['A', 'a', 'J', 'S'].includes(symbol)) return 'Supraventricular';
-  if (['V', 'E', 'r'].includes(symbol)) return 'Ventricular';
-  if (['F'].includes(symbol)) return 'Fusion';
-  if (['Q', '/', 'f', 'n'].includes(symbol)) return 'Other';
-  return 'Other';
-}
+  function mapSymbolToAAMI(symbol: string): string {
+    if (['N', '.', 'L', 'R', 'e', 'j'].includes(symbol)) return 'Normal';
+    if (['A', 'a', 'J', 'S'].includes(symbol)) return 'Supraventricular';
+    if (['V', 'E', 'r'].includes(symbol)) return 'Ventricular';
+    if (['F'].includes(symbol)) return 'Fusion';
+    if (['Q', '/', 'f', 'n'].includes(symbol)) return 'Other';
+    return 'Other';
+  }
   // Add this function to see what data we have
+  function getRollingSummary() {
+    if (beatPredictions.length === 0) return null;
+    const counts: Record<string, number> = {};
+    beatPredictions.forEach(bp => {
+      counts[bp.prediction] = (counts[bp.prediction] || 0) + 1;
+    });
+    const total = beatPredictions.length;
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const majorityClass = sorted[0][0];
+    const majorityPercent = (sorted[0][1] / total) * 100;
+    return {
+      majorityClass,
+      majorityPercent,
+      counts,
+      total
+    };
+  }
+
   function updatePeaks() {
     // Add debug for signal diagnostics
     const maxAbs = Math.max(...dataCh0.current.map(Math.abs));
     const mean = dataCh0.current.reduce((sum, val) => sum + val, 0) / dataCh0.current.length;
     const variance = dataCh0.current.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / dataCh0.current.length;
-
-    console.log("Signal diagnostic:", {
-      maxAbs,
-      mean,
-      variance,
-      signalToNoiseRatio: maxAbs / (Math.sqrt(variance) || 1)
-    });
 
     // Skip peak detection if the signal is too weak or too flat
     if (maxAbs < 0.05 || variance < 0.0002) {
@@ -390,7 +405,7 @@ function mapSymbolToAAMI(symbol: string): string {
         console.error('Failed to load model:', err);
       }
     }
-    
+
     loadModel();
   }, []);
 
@@ -449,15 +464,15 @@ function mapSymbolToAAMI(symbol: string): string {
       return;
     }
     const inputShape = ecgModel.inputs[0].shape;
-const MODEL_INPUT_LENGTH = inputShape[1] || 187;
+    const MODEL_INPUT_LENGTH = inputShape[1] || 187;
 
-const ecgWindow = dataCh0.current.slice(-MODEL_INPUT_LENGTH);
-if (ecgWindow.length < MODEL_INPUT_LENGTH) {
-  console.log("Not enough ECG data for prediction");
-  return;
-}
-const normWindow = zscoreNorm(ecgWindow);
-const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_INPUT_LENGTH, 1]);
+    const ecgWindow = dataCh0.current.slice(-MODEL_INPUT_LENGTH);
+    if (ecgWindow.length < MODEL_INPUT_LENGTH) {
+      console.log("Not enough ECG data for prediction");
+      return;
+    }
+    const normWindow = zscoreNorm(ecgWindow);
+    const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_INPUT_LENGTH, 1]);
     console.log("Input tensor shape:", inputTensor.shape);
 
     try {
@@ -490,6 +505,12 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
       setModelPrediction({
         prediction: predictedClass,
         confidence: confidence
+      });
+
+      // Add this to keep track of recent beat predictions
+      setBeatPredictions(prev => {
+        const updated = [...prev, { prediction: predictedClass, confidence }];
+        return updated.length > ROLLING_WINDOW_SIZE ? updated.slice(-ROLLING_WINDOW_SIZE) : updated;
       });
 
       inputTensor.dispose();
@@ -558,10 +579,10 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
       }
     }
 
-    if (intervals.status.pr === 'long') 
+    if (intervals.status.pr === 'long')
       warnings.push({ text: 'Possible 1st degree AV block', color: 'text-red-400' });
 
-    if (intervals.status.qtc === 'prolonged') 
+    if (intervals.status.qtc === 'prolonged')
       warnings.push({ text: 'QT prolongation - arrhythmia risk', color: 'text-red-400' });
 
     if (warnings.length === 0) return null;
@@ -587,20 +608,20 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
     const sPoint = pqrstPoints.find(p => p.type === 'S');
     const tPoint = pqrstPoints.find(p => p.type === 'T');
     const qPoint = pqrstPoints.find(p => p.type === 'Q');
-    
+
     if (!sPoint || !tPoint || !qPoint) {
       return null;
     }
-    
+
     // Find J-point (end of S-wave)
     const jPointIndex = sPoint.index;
-    
+
     // Get ST segment point (80ms after J-point)
     const stPointIndex = jPointIndex + Math.floor(0.08 * SAMPLE_RATE);
-    
+
     // Get baseline as PR segment level (or use isoelectric line)
     const baseline = qPoint.amplitude;
-    
+
     // Find ST point value (interpolate if needed)
     let stValue;
     const stPoint = pqrstPoints.find(p => p.index === stPointIndex);
@@ -611,15 +632,15 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
       const ratio = (stPointIndex - sPoint.index) / (tPoint.index - sPoint.index);
       stValue = sPoint.amplitude + ratio * (tPoint.amplitude - sPoint.amplitude);
     }
-    
+
     // Calculate ST deviation in mm (1mm = 0.1mV in standard ECG)
     const deviation = (stValue - baseline) * 10;
-    
+
     // Determine status
     let status: 'normal' | 'elevation' | 'depression' = 'normal';
     if (deviation >= 0.2) status = 'elevation';
     else if (deviation <= -0.1) status = 'depression';
-    
+
     return { deviation, status };
   };
 
@@ -629,21 +650,21 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
       alert("No ECG data available for report generation");
       return;
     }
-    
+
     // Create CSV content
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "ECG Monitor Summary Report\n";
     csvContent += `Generated on,${new Date().toLocaleString()}\n\n`;
-    
+
     // Add patient info (gender since that's all we have)
     csvContent += "Patient Information\n";
     csvContent += `Gender,${gender === 'male' ? 'Male' : 'Female'}\n\n`;
-    
+
     // Add heart rate and rhythm information
     csvContent += "Vital Signs\n";
     csvContent += `Heart Rate,${ecgIntervals.bpm.toFixed(1)} BPM\n`;
     csvContent += `Heart Rate Status,${ecgIntervals.status.bpm}\n\n`;
-    
+
     // Add ECG intervals
     csvContent += "ECG Intervals\n";
     csvContent += `RR Interval,${ecgIntervals.rr.toFixed(0)} ms\n`;
@@ -651,18 +672,18 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
     csvContent += `QRS Duration,${ecgIntervals.qrs.toFixed(0)} ms\n`;
     csvContent += `QT Interval,${ecgIntervals.qt ? ecgIntervals.qt.toFixed(0) : "N/A"} ms\n`;
     csvContent += `QTc Interval,${ecgIntervals.qtc.toFixed(0)} ms\n`;
-    
+
     // Add ST segment data if available
     if (stSegmentData) {
       csvContent += `ST Deviation,${stSegmentData.deviation.toFixed(2)} mm\n`;
       csvContent += `ST Status,${stSegmentData.status}\n`;
     }
-    
+
     csvContent += "\nInterval Status\n";
     csvContent += `PR Status,${ecgIntervals.status.pr}\n`;
     csvContent += `QRS Status,${ecgIntervals.status.qrs}\n`;
     csvContent += `QTc Status,${ecgIntervals.status.qtc}\n`;
-    
+
     // Add HRV metrics if available
     if (hrvMetrics && hrvMetrics.sampleCount > 0) {
       csvContent += "\nHeart Rate Variability Analysis\n";
@@ -671,17 +692,17 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
       csvContent += `pNN50,${hrvMetrics.pnn50.toFixed(1)}%\n`;
       csvContent += `Triangular Index,${hrvMetrics.triangularIndex.toFixed(1)}\n`;
       csvContent += `LF/HF Ratio,${hrvMetrics.lfhf.ratio.toFixed(2)}\n`;
-      
+
       // Add physiological state
       if (physioState) {
         csvContent += `Physiological State,${physioState.state}\n`;
         csvContent += `State Confidence,${(physioState.confidence * 100).toFixed(0)}%\n`;
       }
     }
-    
+
     // Add findings section
     csvContent += "\nPotential Findings\n";
-    
+
     // Add abnormalities
     const findings = [];
     if (ecgIntervals.status.bpm === 'bradycardia') findings.push("Bradycardia (slow heart rate)");
@@ -691,7 +712,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
     if (ecgIntervals.status.qtc === 'prolonged') findings.push("Prolonged QTc interval - Increased arrhythmia risk");
     if (stSegmentData?.status === 'elevation') findings.push("ST segment elevation - Possible myocardial injury");
     if (stSegmentData?.status === 'depression') findings.push("ST segment depression - Possible ischemia");
-    
+
     if (findings.length > 0) {
       findings.forEach(finding => {
         csvContent += `${finding}\n`;
@@ -699,16 +720,16 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
     } else {
       csvContent += "No abnormalities detected\n";
     }
-    
+
     // Add disclaimer
     csvContent += "\nDISCLAIMER: This is not a medical device. Do not use for diagnosis or treatment decisions.\n";
     csvContent += "Analysis is based on a limited dataset and should be confirmed by a qualified healthcare professional.\n";
-    
+
     // Create download link
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `ecg-report-${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute("download", `ecg-report-${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -720,10 +741,10 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
   useEffect(() => {
     if (!showAIAnalysis) return;
     if (!modelLoaded || !ecgIntervals) return;
-    
+
     // Run initial analysis
     analyzeCurrent();
-    
+
     // Set up auto-refresh
     const interval = setInterval(() => {
       analyzeCurrent();
@@ -735,22 +756,22 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
 
   function calculateQTc(qt: number, rr: number) {
     // Different formulas for different scenarios
-    
+
     // Bazett (most common, but less accurate at extreme heart rates)
     const bazett = qt / Math.sqrt(rr / 1000);
-    
+
     // Fridericia (better for bradycardia)
-    const fridericia = qt / Math.pow(rr / 1000, 1/3);
-    
+    const fridericia = qt / Math.pow(rr / 1000, 1 / 3);
+
     // Framingham (good for general population)
     const framingham = qt + 0.154 * (1000 - rr);
-    
+
     // Hodges (another alternative)
     const hodges = qt + 1.75 * (60000 / rr - 60);
-    
+
     // Select formula based on heart rate
     const hr = 60000 / rr;
-    
+
     if (hr < 60) return fridericia; // For bradycardia
     if (hr > 100) return framingham; // For tachycardia
     return bazett; // For normal range
@@ -771,21 +792,21 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
     const loadModel = async () => {
       await sessionAnalyzer.current.loadModel();
     };
-    
+
     loadModel();
   }, []);
 
   // Add this effect to update recording time
   useEffect(() => {
     if (!isRecording || !recordingStartTime) return;
-    
+
     const timerInterval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
       const min = String(Math.floor(elapsed / 60)).padStart(2, "0");
       const sec = String(elapsed % 60).padStart(2, "0");
       setRecordingTime(`${min}:${sec}`);
     }, 1000);
-    
+
     return () => clearInterval(timerInterval);
   }, [isRecording, recordingStartTime]);
 
@@ -794,7 +815,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
     setIsRecording(true);
     setRecordingStartTime(Date.now());
     setRecordedData([]);
-    
+
     // Create a new session
     setCurrentSession({
       id: Date.now().toString(),
@@ -810,34 +831,25 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
   };
 
   const stopRecording = () => {
-    if (!isRecording || !currentSession || !recordingStartTime) return null;
-    
+    if (!isRecording || !currentSession || !recordingStartTime) {
+      console.log("Stop recording failed: missing state", { isRecording, currentSession, recordingStartTime });
+      return null;
+    }
+
     const endTime = Date.now();
     const duration = (endTime - recordingStartTime) / 1000;
-    
-    // Run a fresh detection on the recorded data
+
     const freshRPeaks = panTompkins.current.detectQRS(recordedData);
     const freshPQRST = pqrstDetector.current.detectWaves(recordedData, freshRPeaks, 0);
-    
-    // Calculate intervals on the full recording
+
+    console.log("Detected peaks:", freshRPeaks.length, "Detected PQRST:", freshPQRST.length);
+
     const freshIntervals = intervalCalculator.current.calculateIntervals(freshPQRST);
-    
-    // Log more details for debugging
-    console.log("Recording stopped with detailed data:", {
-      dataLength: recordedData.length,
-      peaksDetected: freshRPeaks.length,
-      pqrstDetected: freshPQRST.length,
-      intervalsCalculated: freshIntervals ? {
-        bpm: freshIntervals.bpm,
-        rr: freshIntervals.rr,
-        pr: freshIntervals.pr,
-        qrs: freshIntervals.qrs,
-        qt: freshIntervals.qt,
-        qtc: freshIntervals.qtc
-      } : "no"
-    });
-    
-    // Update the session with fresh analysis
+
+    if (!freshIntervals) {
+      console.log("Interval calculation failed, not enough valid data.");
+    }
+
     const updatedSession: RecordingSession = {
       ...currentSession,
       endTime,
@@ -845,19 +857,17 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
       ecgData: [...recordedData],
       rPeaks: freshRPeaks,
       pqrstPoints: freshPQRST,
-      // Change the property name to match what the analyzer expects
       intervals: freshIntervals || null
     };
-    
+
     setCurrentSession(updatedSession);
     setIsRecording(false);
-    
-    // Analyze the session
+
     analyzeSession(updatedSession);
-    
+
     return updatedSession;
   };
-  
+
   // Add this at the beginning of your analyzeSession function
   const analyzeSession = async (session: RecordingSession) => {
     try {
@@ -870,7 +880,6 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
 
       // Rest of your function
       if (session.intervals) {
-        // Use pre-calculated interval data for AI analysis
         const featureVector = [
           session.intervals.rr,
           session.intervals.bpm,
@@ -878,38 +887,37 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
           session.intervals.qrs,
           session.intervals.qt || 0,
           session.intervals.qtc,
-          stSegmentData?.deviation || 0,  // ST segment data
-          hrvMetrics?.rmssd || 0,         // HRV metric
-          hrvMetrics?.sdnn || 0,          // HRV metric
-          hrvMetrics?.lfhf?.ratio || 0,   // HRV metric
+          stSegmentData?.deviation || 0,
+          hrvMetrics?.rmssd || 0,
+          hrvMetrics?.sdnn || 0,
+          hrvMetrics?.lfhf?.ratio || 0,
         ];
-        
-        // Pass only the feature vector to a specialized analyzer function
+
         const results = await sessionAnalyzer.current.analyzeFeatures(featureVector);
-        
+
         setSessionResults(results);
-        setShowSessionReport(true);
+        setShowSessionReport(true); // <-- Only after results are set
       }
     } catch (err) {
       console.error('Session analysis failed:', err);
     }
   };
-  
+
   const saveSessionReport = () => {
     if (!sessionResults || !currentSession) return;
-    
+
     // Create CSV content
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "ECG Monitor Session Report\n";
     csvContent += `Generated on,${new Date().toLocaleString()}\n\n`;
-    
+
     // Add patient info
     csvContent += "Patient Information\n";
     csvContent += `Age,${currentSession.patientInfo.age}\n`;
     csvContent += `Gender,${currentSession.patientInfo.gender === 'male' ? 'Male' : 'Female'}\n`;
     csvContent += `Weight,${currentSession.patientInfo.weight} kg\n`;
     csvContent += `Height,${currentSession.patientInfo.height} cm\n\n`;
-    
+
     // Add summary
     csvContent += "Summary\n";
     csvContent += `Recording Duration,${sessionResults.summary.recordingDuration}\n`;
@@ -917,14 +925,14 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
     csvContent += `Heart Rate Range,${sessionResults.summary.heartRate.min.toFixed(0)}-${sessionResults.summary.heartRate.max.toFixed(0)} BPM\n`;
     csvContent += `ECG Classification,${sessionResults.aiClassification.prediction}\n`;
     csvContent += `Classification Confidence,${sessionResults.aiClassification.confidence.toFixed(1)}%\n\n`;
-    
+
     // Add more sections for intervals, HRV, etc.
-    
+
     // Create download link
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
     link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `ecg-session-report-${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute("download", `ecg-session-report-${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -933,7 +941,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
   // Modify your data processing to record data
   useEffect(() => {
     // Existing data processing code...
-    
+
     // Add this to record data when in recording mode
     if (isRecording) {
       // Take a copy of the last N samples that came in
@@ -941,40 +949,52 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
         Math.max(0, sampleIndex.current - 10),
         Math.min(NUM_POINTS, sampleIndex.current)
       );
-      
+
       // If we wrapped around, also get the data from the end
       if (sampleIndex.current < 10) {
         const endData = dataCh0.current.slice(NUM_POINTS - (10 - sampleIndex.current));
         newData.unshift(...endData);
       }
-      
+
       // Add to recorded data
       setRecordedData(prev => [...prev, ...newData]);
     }
   }, [isRecording, sampleIndex.current]);
 
+  // Patient Info modal state
+  const [showPatientInfo, setShowPatientInfo] = useState(false);
+
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ">
-    
-{/* Add the Session Recording component */}
-    <SessionRecording
-      connected={connected}
-      onStartRecording={startRecording}
-      onStopRecording={stopRecording}
-      isRecording={isRecording}
-      recordingTime={recordingTime}
-    />
-    
-    {/* Add the Session Report modal */}
-    {showSessionReport && sessionResults && currentSession && (
-      <SessionReport
-        analysisResults={sessionResults}
-        patientInfo={currentSession.patientInfo}
-        sessionDate={new Date(currentSession.startTime)}
-        onClose={() => setShowSessionReport(false)}
-        onSaveReport={saveSessionReport}
-      />
-    )}
+      {/* Patient Info Modal (overlay, not in sidebar) */}
+      {showPatientInfo && (
+        <SessionRecording
+          connected={connected}
+          onStartRecording={startRecording}
+          onStopRecording={stopRecording}
+          isRecording={isRecording}
+          recordingTime={recordingTime}
+          setShowPatientInfo={setShowPatientInfo}
+        />
+      )}
+      {showSessionReport && sessionResults && (
+        <SessionReport
+          analysisResults={sessionResults}
+          patientInfo={currentSession?.patientInfo ?? {
+            age: 0,
+            gender: 'male',
+            weight: 0,
+            height: 0,
+            medicalHistory: [],
+            medications: []
+          }}
+          sessionDate={new Date(currentSession?.startTime ?? Date.now())}
+          recordingTime={recordingTime}
+          onClose={() => setShowSessionReport(false)}
+          onSaveReport={saveSessionReport}
+        />
+      )}
+
       {/* Grid background */}
       <div className="absolute inset-0 opacity-10">
         <div className="h-full w-full bg-grid-pattern bg-[size:40px_40px]"></div>
@@ -989,7 +1009,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
 
       {/* Improved Fixed Sidebar */}
       <div className="fixed left-0 top-0 h-full z-30 flex items-center">
-        <div 
+        <div
           className="group h-full py-6 px-2 bg-black backdrop-blur border-r border-white/10 flex flex-col items-center justify-center transition-all duration-300 hover:w-[240px] w-16"
         >
           {/* Connect Device Button */}
@@ -998,11 +1018,10 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               <div className="w-16 flex justify-center">
                 <button
                   onClick={connected ? undefined : connect}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    connected 
-                      ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed' 
-                      : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
-                  }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${connected
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/30 cursor-not-allowed'
+                    : 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
+                    }`}
                   title={connected ? 'Connected' : 'Connect Device'}
                 >
                   <Bluetooth className="w-5 h-5" />
@@ -1015,18 +1034,17 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               </div>
             </div>
           </div>
-          
+
           {/* Peaks Button */}
           <div className="relative w-full mb-5">
             <div className="flex">
               <div className="w-16 flex justify-center">
-                <button 
+                <button
                   onClick={() => setPeaksVisible(!peaksVisible)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    peaksVisible
-                      ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-                  }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${peaksVisible
+                    ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                    : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                    }`}
                   title={peaksVisible ? 'Hide Peaks' : 'Show Peaks'}
                 >
                   {peaksVisible ? <Eye className="w-5 h-5" /> : <EyeOff className="w-5 h-5" />}
@@ -1039,18 +1057,17 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               </div>
             </div>
           </div>
-          
+
           {/* PQRST Button */}
           <div className="relative w-full mb-5">
             <div className="flex">
               <div className="w-16 flex justify-center">
-                <button 
+                <button
                   onClick={() => setShowPQRST(!showPQRST)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    showPQRST
-                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
-                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-                  }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${showPQRST
+                    ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 hover:bg-orange-500/30'
+                    : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                    }`}
                   title={showPQRST ? 'Hide PQRST' : 'Show PQRST'}
                 >
                   <Activity className="w-5 h-5" />
@@ -1063,18 +1080,17 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               </div>
             </div>
           </div>
-          
+
           {/* HRV Button */}
           <div className="relative w-full mb-5">
             <div className="flex">
               <div className="w-16 flex justify-center">
-                <button 
+                <button
                   onClick={() => setShowHRV(!showHRV)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    showHRV
-                      ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
-                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-                  }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${showHRV
+                    ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30 hover:bg-purple-500/30'
+                    : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                    }`}
                   title={showHRV ? 'Hide HRV' : 'Show HRV'}
                 >
                   <TrendingUp className="w-5 h-5" />
@@ -1087,18 +1103,17 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               </div>
             </div>
           </div>
-          
+
           {/* Intervals Button */}
           <div className="relative w-full mb-5">
             <div className="flex">
               <div className="w-16 flex justify-center">
-                <button 
+                <button
                   onClick={() => setShowIntervals(!showIntervals)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    showIntervals
-                      ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
-                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-                  }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${showIntervals
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 hover:bg-blue-500/30'
+                    : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                    }`}
                   title={showIntervals ? 'Hide Intervals' : 'Show Intervals'}
                 >
                   <Activity className="w-5 h-5" />
@@ -1111,18 +1126,62 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               </div>
             </div>
           </div>
-          
+
+          {/* Start/Stop Recording Button Group in Sidebar */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                {!isRecording ? (
+                  <button
+                    onClick={() => {
+                      console.log("Button clicked, connected:", connected);
+                      if (connected) {
+                        setShowPatientInfo(true);
+                        console.log("setShowPatientInfo called");
+                      } else {
+                        console.log("Device not connected");
+                      }
+                    }}
+                    disabled={!connected}
+                    className={`w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-md
+            ${connected
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                        : 'bg-gray-500/20 text-gray-400 border border-gray-700 cursor-not-allowed'
+                      }`}
+                    title={connected ? "Start Recording" : "Connect device to record"}
+                  >
+                    <Play className="w-5 h-5" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopRecording}
+                    className="w-10 h-10 flex items-center justify-center rounded-full transition-all shadow-md
+            bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30"
+                    title="Stop Recording"
+                  >
+                    <Square className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                <span className={`text-sm font-medium ${!isRecording ? (connected ? 'text-green-400' : 'text-gray-400') : 'text-red-400'}`}>
+                  {!isRecording ? "Start Recording" : "Stop Recording"}
+                </span>
+
+              </div>
+            </div>
+          </div>
+
           {/* Export Report Button */}
           <div className="relative w-full mb-5">
             <div className="flex">
               <div className="w-16 flex justify-center">
-                <button 
+                <button
                   onClick={!ecgIntervals ? undefined : generateSummaryReport}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    !ecgIntervals
-                      ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                      : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                  }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${!ecgIntervals
+                    ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                    : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                    }`}
                   title="Export Report"
                 >
                   <BarChart3 className="w-5 h-5" />
@@ -1135,12 +1194,12 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               </div>
             </div>
           </div>
-          
+
           {/* AI Analysis Button */}
           <div className="relative w-full mb-5">
             <div className="flex">
               <div className="w-16 flex justify-center">
-                <button 
+                <button
                   onClick={() => {
                     // If we're turning on the analysis and model is loaded
                     if (!showAIAnalysis && modelLoaded && connected) {
@@ -1150,11 +1209,10 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                       setShowAIAnalysis(!showAIAnalysis); // Just toggle visibility
                     }
                   }}
-                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
-                    showAIAnalysis
-                      ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/30'
-                      : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
-                  }`}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${showAIAnalysis
+                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/30'
+                    : 'bg-gray-500/20 text-gray-400 border border-gray-500/30 hover:bg-gray-500/30'
+                    }`}
                   title={showAIAnalysis ? 'Hide AI Analysis' : 'Show AI Analysis'}
                 >
                   <Zap className="w-5 h-5" />
@@ -1192,28 +1250,28 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm text-gray-300">Physiological State:</span>
-                  <span className="font-bold text-lg" style={{ 
-                    color: 
-                      physioState.state === "High Stress" ? "#ef4444" : 
-                      physioState.state === "Relaxed" ? "#22c55e" : 
-                      physioState.state === "Focused" ? "#3b82f6" : 
-                      physioState.state === "Fatigue" ? "#f97316" : 
-                      physioState.state === "Analyzing" ? "#94a3b8" : "#94a3b8" 
+                  <span className="font-bold text-lg" style={{
+                    color:
+                      physioState.state === "High Stress" ? "#ef4444" :
+                        physioState.state === "Relaxed" ? "#22c55e" :
+                          physioState.state === "Focused" ? "#3b82f6" :
+                            physioState.state === "Fatigue" ? "#f97316" :
+                              physioState.state === "Analyzing" ? "#94a3b8" : "#94a3b8"
                   }}>
                     {physioState.state}
                   </span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-1.5">
-                  <div 
-                    className="h-1.5 rounded-full" 
-                    style={{ 
+                  <div
+                    className="h-1.5 rounded-full"
+                    style={{
                       width: `${physioState.confidence * 100}%`,
-                      backgroundColor: 
-                        physioState.state === "High Stress" ? "#ef4444" : 
-                        physioState.state === "Relaxed" ? "#22c55e" : 
-                        physioState.state === "Focused" ? "#3b82f6" : 
-                        physioState.state === "Fatigue" ? "#f97316" : 
-                        physioState.state === "Analyzing" ? "#94a3b8" : "#94a3b8" 
+                      backgroundColor:
+                        physioState.state === "High Stress" ? "#ef4444" :
+                          physioState.state === "Relaxed" ? "#22c55e" :
+                            physioState.state === "Focused" ? "#3b82f6" :
+                              physioState.state === "Fatigue" ? "#f97316" :
+                                physioState.state === "Analyzing" ? "#94a3b8" : "#94a3b8"
                     }}
                   ></div>
                 </div>
@@ -1246,7 +1304,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-300">SDNN:</span>
-                    <span className="font-mono text-blue-400">{hrvMetrics.sdnn.toFixed(1)} ms</span>
+                  <span className="font-mono text-blue-400">{hrvMetrics.sdnn.toFixed(1)} ms</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-300">pNN50:</span>
@@ -1279,8 +1337,8 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                     <span className="font-mono text-orange-400 text-sm">
                       {hrvMetrics.lfhf.ratio.toFixed(2)}
                       <span className="text-xs ml-1 text-gray-400">
-                        {hrvMetrics.lfhf.ratio > 2.0 ? '(Sympathetic ↑)' : 
-                         hrvMetrics.lfhf.ratio < 0.5 ? '(Parasympathetic ↑)' : '(Balanced)'}
+                        {hrvMetrics.lfhf.ratio > 2.0 ? '(Sympathetic ↑)' :
+                          hrvMetrics.lfhf.ratio < 0.5 ? '(Parasympathetic ↑)' : '(Balanced)'}
                       </span>
                     </span>
                   </div>
@@ -1308,108 +1366,118 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
       )}
 
       {/* AI Prediction Results Panel */}
-    {showAIAnalysis && (
-  <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
-    <div className="flex items-center justify-between mb-4">
-      <h3 className="text-lg font-bold flex items-center gap-2">
-        <Zap className="w-5 h-5 text-yellow-400" />
-        AI Analysis
-      </h3>
-      <button
-        onClick={() => setShowAIAnalysis(false)}
-        className="text-gray-400 hover:text-white"
-      >
-        ✕
-      </button>
-    </div>
-    {(bpmDisplay === "-- BPM" || signalQuality !== "good") ? (
-      <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
-        <span className="font-bold text-lg text-yellow-400">Analyzing...</span>
-        <p className="text-xs text-gray-400 mt-2">
-          Waiting for correct BPM and good signal quality to run AI analysis.
-        </p>
-      </div>
-    ) : (
-      modelPrediction && (
-        <>
-          <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm text-gray-300">ECG Classification:</span>
-              <span className="font-bold text-lg" style={{ 
-                color: 
-                  modelPrediction.prediction === "Normal" ? "#22c55e" : 
-                  modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-              }}>
-                {modelPrediction.prediction}
-              </span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-1.5">
-              <div 
-                className="h-1.5 rounded-full" 
-                style={{ 
-                  width: `${modelPrediction.confidence}%`,
-                  backgroundColor: 
-                    modelPrediction.prediction === "Normal" ? "#22c55e" : 
-                    modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-                }}
-              ></div>
-            </div>
-            <p className="text-xs text-gray-400 mt-1">
-              Confidence: {modelPrediction.confidence.toFixed(1)}%
-            </p>
+      {showAIAnalysis && (
+        <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Zap className="w-5 h-5 text-yellow-400" />
+              AI Analysis
+            </h3>
+            <button
+              onClick={() => setShowAIAnalysis(false)}
+              className="text-gray-400 hover:text-white"
+            >
+              ✕
+            </button>
           </div>
-          {/* Use your class label mapping here */}
-          {(() => {
-            const predictionLabels: Record<string, string> = {
-              "Normal": "Normal beat",
-              "Supraventricular": "Supraventricular ectopic beat",
-              "Ventricular": "Ventricular ectopic beat",
-              "Fusion": "Fusion beat",
-              "Other": "Other/unknown beat"
-            };
-            const pred = modelPrediction.prediction;
-            if (predictionLabels[pred]) {
-              if (pred === "Normal") {
+          {(bpmDisplay === "-- BPM" || signalQuality !== "good") ? (
+            <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
+              <span className="font-bold text-lg text-yellow-400">Analyzing...</span>
+              <p className="text-xs text-gray-400 mt-2">
+                Waiting for correct BPM and good signal quality to run AI analysis.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Rolling Summary */}
+              {(() => {
+                const summary = getRollingSummary();
+                if (!summary) return null;
+                const predictionLabels: Record<string, string> = {
+                  "Normal": "Normal beat",
+                  "Supraventricular": "Supraventricular ectopic beat",
+                  "Ventricular": "Ventricular ectopic beat",
+                  "Fusion": "Fusion beat",
+                  "Other": "Other/unknown beat"
+                };
                 return (
-                  <div className="p-3 rounded-lg border border-green-500/30 bg-green-500/10">
-                    <h4 className="text-sm font-medium text-green-400 mb-2">Normal ECG Pattern</h4>
-                    <p className="text-sm text-gray-300">
-                      The AI model has detected a <b>{predictionLabels[pred]}</b>.<br />
-                      No abnormal rhythms detected in this window.
+                  <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
+                      <span className="font-bold text-lg" style={{
+                        color:
+                          summary.majorityClass === "Normal" ? "#22c55e" :
+                            summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                      }}>
+                        {predictionLabels[summary.majorityClass] || summary.majorityClass}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
+                      <div
+                        className="h-1.5 rounded-full"
+                        style={{
+                          width: `${summary.majorityPercent}%`,
+                          backgroundColor:
+                            summary.majorityClass === "Normal" ? "#22c55e" :
+                              summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                        }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {summary.majorityPercent.toFixed(1)}% {predictionLabels[summary.majorityClass] || summary.majorityClass} in last {summary.total} beats.
                     </p>
+                    <ul className="mt-2 text-xs text-gray-300">
+                      {Object.entries(summary.counts).map(([cls, cnt]) => (
+                        <li key={cls}>
+                          {predictionLabels[cls] || cls}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
+                        </li>
+                      ))}
+                    </ul>
+                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
+                      <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                        Warning: Abnormal rhythm detected!
+                      </div>
+                    )}
                   </div>
                 );
-              } else {
-                return (
-                  <div className="p-3 rounded-lg border border-red-500/30 bg-red-500/10">
-                    <h4 className="text-sm font-medium text-red-400 mb-2">Potential Abnormality Detected</h4>
-                    <p className="text-sm text-gray-300">
-                      The AI model has detected a <b>{predictionLabels[pred]}</b>.<br />
-                      Please consult with a healthcare professional for proper evaluation.
-                    </p>
+              })()}
+
+              {/* Per-beat prediction (latest beat) */}
+              {modelPrediction && (
+                <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-gray-300">Latest Beat:</span>
+                    <span className="font-bold text-lg" style={{
+                      color:
+                        modelPrediction.prediction === "Normal" ? "#22c55e" :
+                          modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                    }}>
+                      {modelPrediction.prediction}
+                    </span>
                   </div>
-                );
-              }
-            } else {
-              return (
-                <div className="p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
-                  <h4 className="text-sm font-medium text-yellow-400 mb-2">Unknown Pattern</h4>
-                  <p className="text-sm text-gray-300">
-                    The AI model detected an unknown or unclassified ECG pattern.<br />
-                    Please consult with a healthcare professional for further evaluation.
+                  <div className="w-full bg-gray-700 rounded-full h-1.5">
+                    <div
+                      className="h-1.5 rounded-full"
+                      style={{
+                        width: `${modelPrediction.confidence}%`,
+                        backgroundColor:
+                          modelPrediction.prediction === "Normal" ? "#22c55e" :
+                            modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                      }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Confidence: {modelPrediction.confidence.toFixed(1)}%
                   </p>
                 </div>
-              );
-            }
-          })()}
-        </>
-      )
-    )}
-    <div className="mt-4 text-xs text-gray-500 italic">
-      This is not a diagnostic tool. Results should be confirmed by medical professionals.
-    </div>
-  </div>
-)}
+              )}
+            </>
+          )}
+          <div className="mt-4 text-xs text-gray-500 italic">
+            This is not a diagnostic tool. Results should be confirmed by medical professionals.
+          </div>
+        </div>
+      )}
 
       {/* ECG Intervals Panel */}
       {showIntervals && (
@@ -1427,7 +1495,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               ✕
             </button>
           </div>
-          
+
           <div className="flex gap-4">
             {/* Left column - description and gender */}
             <div className="w-1/3">
@@ -1435,7 +1503,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
               <p className="text-sm text-gray-300 mb-4">
                 This panel analyzes your heartbeat timing patterns. These measurements can reveal important information about heart health.
               </p>
-              
+
               {/* Gender selector with explanation */}
               <div className="mb-4">
                 <p className="text-sm text-gray-300 mb-2">
@@ -1444,33 +1512,31 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                 <div className="flex gap-2">
                   <button
                     onClick={() => setGender('male')}
-                    className={`flex-1 py-2 rounded-lg text-sm ${
-                      gender === 'male' 
-                        ? 'bg-blue-500/30 border border-blue-500/60 text-blue-400' 
-                        : 'bg-gray-800/50 border border-gray-700 text-gray-400'
-                    }`}
+                    className={`flex-1 py-2 rounded-lg text-sm ${gender === 'male'
+                      ? 'bg-blue-500/30 border border-blue-500/60 text-blue-400'
+                      : 'bg-gray-800/50 border border-gray-700 text-gray-400'
+                      }`}
                   >
                     Male
                   </button>
                   <button
                     onClick={() => setGender('female')}
-                    className={`flex-1 py-2 rounded-lg text-sm ${
-                      gender === 'female' 
-                        ? 'bg-pink-500/30 border border-pink-500/60 text-pink-400' 
-                        : 'bg-gray-800/50 border border-gray-700 text-gray-400'
-                    }`}
+                    className={`flex-1 py-2 rounded-lg text-sm ${gender === 'female'
+                      ? 'bg-pink-500/30 border border-pink-500/60 text-pink-400'
+                      : 'bg-gray-800/50 border border-gray-700 text-gray-400'
+                      }`}
                   >
                     Female
                   </button>
                 </div>
               </div>
-              
+
               {/* Disclaimer */}
               <div className="mt-auto pt-4 text-xs text-gray-500 italic">
                 This is not a medical device. Do not use for diagnosis or treatment decisions.
               </div>
             </div>
-            
+
             {/* Right column - metrics */}
             <div className="w-2/3">
               {ecgIntervals ? (
@@ -1479,12 +1545,11 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                   <div className="p-3 rounded-lg border border-white/20 bg-black/40 mb-4">
                     <div className="flex items-center justify-between">
                       <span className="text-gray-300">Heart Rate:</span>
-                      <span className={`font-mono font-bold text-xl ${
-                        ecgIntervals.status.bpm === 'normal' ? 'text-green-400' :
+                      <span className={`font-mono font-bold text-xl ${ecgIntervals.status.bpm === 'normal' ? 'text-green-400' :
                         ecgIntervals.status.bpm === 'bradycardia' ? 'text-yellow-400' :
-                        ecgIntervals.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
-                      }`}>
-                        {ecgIntervals.bpm > 0 ? ecgIntervals.bpm.toFixed(1) : 
+                          ecgIntervals.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
+                        }`}>
+                        {ecgIntervals.bpm > 0 ? ecgIntervals.bpm.toFixed(1) :
                           (bpmDisplay !== "-- BPM" ? bpmDisplay.split(" ")[0] : "0")} BPM
                       </span>
                     </div>
@@ -1492,18 +1557,17 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                       How many times your heart beats per minute. Normal is 60-100 BPM.
                     </div>
                   </div>
-                  
+
                   {/* Two-column layout for metrics */}
                   <div className="grid grid-cols-2 gap-3">
                     {/* RR Interval with explanation */}
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 text-sm">Beat-to-Beat:</span>
-                        <span className={`font-mono ${
-                          ecgIntervals.status.rr === 'normal' ? 'text-green-400' :
+                        <span className={`font-mono ${ecgIntervals.status.rr === 'normal' ? 'text-green-400' :
                           ecgIntervals.status.rr === 'short' ? 'text-yellow-400' :
-                          ecgIntervals.status.rr === 'long' ? 'text-blue-400' : 'text-gray-400'
-                        }`}>
+                            ecgIntervals.status.rr === 'long' ? 'text-blue-400' : 'text-gray-400'
+                          }`}>
                           {ecgIntervals.rr.toFixed(0)} ms
                         </span>
                       </div>
@@ -1511,16 +1575,15 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                         R-R interval: 600-1000ms normal
                       </div>
                     </div>
-                    
+
                     {/* PR Interval with explanation */}
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 text-sm">Conduction:</span>
-                        <span className={`font-mono ${
-                          ecgIntervals.status.pr === 'normal' ? 'text-green-400' :
+                        <span className={`font-mono ${ecgIntervals.status.pr === 'normal' ? 'text-green-400' :
                           ecgIntervals.status.pr === 'short' ? 'text-yellow-400' :
-                          ecgIntervals.status.pr === 'long' ? 'text-red-400' : 'text-gray-400'
-                        }`}>
+                            ecgIntervals.status.pr === 'long' ? 'text-red-400' : 'text-gray-400'
+                          }`}>
                           {ecgIntervals.pr.toFixed(0)} ms
                         </span>
                       </div>
@@ -1528,15 +1591,14 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                         PR interval: atria to ventricles
                       </div>
                     </div>
-                    
+
                     {/* QRS Duration with explanation */}
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 text-sm">Activation:</span>
-                        <span className={`font-mono ${
-                          ecgIntervals.status.qrs === 'normal' ? 'text-green-400' :
+                        <span className={`font-mono ${ecgIntervals.status.qrs === 'normal' ? 'text-green-400' :
                           ecgIntervals.status.qrs === 'wide' ? 'text-red-400' : 'text-gray-400'
-                        }`}>
+                          }`}>
                           {ecgIntervals.qrs.toFixed(0)} ms
                         </span>
                       </div>
@@ -1544,15 +1606,14 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                         QRS duration: ventricular activation
                       </div>
                     </div>
-                    
+
                     {/* QTc Interval with explanation */}
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 text-sm">QTc:</span>
-                        <span className={`font-mono ${
-                          ecgIntervals.status.qtc === 'normal' ? 'text-green-400' :
+                        <span className={`font-mono ${ecgIntervals.status.qtc === 'normal' ? 'text-green-400' :
                           ecgIntervals.status.qtc === 'prolonged' ? 'text-red-400' : 'text-gray-400'
-                        }`}>
+                          }`}>
                           {ecgIntervals.qtc.toFixed(0)} ms
                         </span>
                       </div>
@@ -1561,28 +1622,27 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                       </div>
                     </div>
                   </div>
-                  
+
                   {/* ST Segment data - added section */}
                   {stSegmentData && (
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 text-sm">ST Segment:</span>
-                        <span className={`font-mono ${
-                          stSegmentData.status === 'normal' ? 'text-green-400' :
+                        <span className={`font-mono ${stSegmentData.status === 'normal' ? 'text-green-400' :
                           stSegmentData.status === 'elevation' ? 'text-red-400' :
-                          'text-yellow-400'
-                        }`}>
+                            'text-yellow-400'
+                          }`}>
                           {stSegmentData.deviation.toFixed(2)} mm
                         </span>
                       </div>
                       <div className="text-xs text-gray-400 mt-1">
                         {stSegmentData.status === 'normal' ? 'Normal ST segment' :
-                         stSegmentData.status === 'elevation' ? 'ST elevation detected' :
-                         'ST depression detected'}
+                          stSegmentData.status === 'elevation' ? 'ST elevation detected' :
+                            'ST depression detected'}
                       </div>
                     </div>
                   )}
-                  
+
                   {/* Abnormality indicators - full width */}
                   {ecgIntervals.status.pr === 'long' || ecgIntervals.status.qrs === 'wide' || ecgIntervals.status.qtc === 'prolonged' ? (
                     <div className="mt-4 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
@@ -1613,7 +1673,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                       <h4 className="text-sm font-medium text-green-400">All Timing Patterns Normal</h4>
                     </div>
                   )}
-                  
+
                   <div className="mt-3 text-xs text-gray-400 text-center">
                     Based on your most recent complete heartbeat
                   </div>
@@ -1651,7 +1711,7 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
                 case 'S': color = 'text-cyan-400'; break;
                 case 'T': color = 'text-purple-400'; break;
                 default: color = 'text-white';
-              break;
+                  break;
               }
 
               return (
@@ -1672,19 +1732,16 @@ const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_
             return null;
           })}
         </div>
-           )}
+      )}
 
-    
-    
+      {/* Recording indicator - new addition */}
+      {isRecording && (
+        <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 flex items-center px-4 py-2 rounded-full bg-red-900/80 border border-red-500/30 shadow-lg">
+          <Clock className="w-5 h-5 text-red-400 mr-2" />
+          <span className="font-mono text-lg text-red-400">{recordingTime}</span>
+          <span className="ml-1 text-xs text-red-400 font-semibold animate-pulse">Recording...</span>
+        </div>
+      )}
     </div>
   );
-}
-
-function mapSymbolToAAMI(symbol: string): string {
-  if (['N', '.', 'L', 'R', 'e', 'j'].includes(symbol)) return 'Normal';
-  if (['A', 'a', 'J', 'S'].includes(symbol)) return 'Supraventricular';
-  if (['V', 'E', 'r'].includes(symbol)) return 'Ventricular';
-  if (['F'].includes(symbol)) return 'Fusion';
-  if (['Q', '/', 'f', 'n'].includes(symbol)) return 'Other';
-  return 'Other';
 }
