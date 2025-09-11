@@ -535,17 +535,19 @@ export class SessionAnalyzer {
       if (!this.model) {
         const modelLoaded = await this.loadModel();
         if (!modelLoaded) {
-          console.warn('Model not available, using rule-based analysis');
+          console.warn('Model not available, using rule-based ̥analysis');
           return this.performRuleBasedAnalysis(featureVector, heartRate);
         }
       }
       
-      
-          let paddedFeatures = featureVector.slice(0, 720);
-      if (paddedFeatures.length < 720) {
-        paddedFeatures = paddedFeatures.concat(Array(720 - paddedFeatures.length).fill(0));
+      // Get expected input length from model
+      const inputLen = this.model?.inputs[0].shape[1] ?? 187; // Default to 187 if not available
+
+      let paddedFeatures = featureVector.slice(0, inputLen);
+      if (paddedFeatures.length < inputLen) {
+        paddedFeatures = paddedFeatures.concat(Array(inputLen - paddedFeatures.length).fill(0));
       }
-      const inputTensor = tf.tensor3d([paddedFeatures.map(v => [v])], [1, 720, 1]);
+      const inputTensor = tf.tensor3d([paddedFeatures.map(v => [v])], [1, inputLen, 1]);
       
       
       try {

@@ -51,33 +51,6 @@ export default function HomePage() {
     };
   };
   
-  // Run heart disease prediction
-  const analyzeCurrent = async () => {
-    const features = extractEcgFeatures();
-    if (!features) {
-      console.log('Cannot analyze: Missing ECG features');
-      return;
-    }
-    
-    const featureArray = [
-      features.rr,
-      features.bpm,
-      features.pr,
-      features.qrs,
-      features.qt,
-      features.qtc,
-      features.stDeviation,
-      features.rmssd,
-      features.sdnn,
-      features.lfhf
-    ];
-    
-    const result = await predict(featureArray);
-    if (result) {
-      setModelPrediction(result);
-      console.log(`Prediction: ${result.prediction} (${result.confidence.toFixed(1)}% confidence)`);
-    }
-  };
   
   // Clean up interval on unmount
   useEffect(() => {

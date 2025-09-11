@@ -308,23 +308,21 @@ export default function EcgFullPanel() {
       }
     }
 
-    // Debug logging
-    console.log('Peaks detected:', peaks.length);
-    console.log('PQRST points detected:', pqrstPoints.current.length);
-    console.log('Data max:', Math.max(...dataCh0.current));
-    console.log('Data min:', Math.min(...dataCh0.current));
+    // // Debug logging
+    // console.log('Peaks detected:', peaks.length);
+    // console.log('PQRST points detected:', pqrstPoints.current.length);
 
     // Extract RR intervals for HRV analysis
     if (peaks.length >= 2) {
-      console.log('Extracting RR intervals from', peaks.length, 'peaks');
-      hrvCalculator.current.extractRRFromPeaks(peaks, SAMPLE_RATE);
+      // console.log('Extracting RR intervals from', peaks.length, 'peaks');
+      // hrvCalculator.current.extractRRFromPeaks(peaks, SAMPLE_RATE);
 
       // Force update HRV metrics
       const metrics = hrvCalculator.current.getAllMetrics();
-      console.log('HRV Metrics:', metrics);
+      // console.log('HRV Metrics:', metrics);
       setHrvMetrics(metrics);
     } else {
-      console.log('Not enough peaks for HRV analysis');
+      // console.log('Not enough peaks for HRV analysis');
     }
 
     // Calculate ECG intervals when PQRST points are available

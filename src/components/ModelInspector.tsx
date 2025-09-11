@@ -20,6 +20,7 @@ export default function ModelInspector() {
     async function loadModel() {
       setLoading(true);
       try {
+        
         // Check if model exists in localStorage
         const models = await tf.io.listModels();
         if (!models['localstorage://beat-level-ecg-model']) {
