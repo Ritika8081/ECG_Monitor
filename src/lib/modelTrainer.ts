@@ -24,7 +24,7 @@ export async function loadBeatLevelData(ecgPath: string, annPath: string, beatLe
       header: false,
       complete: (results) => {
         const signal = results.data
-          .map((row: any) => Number(row[1])) // MLII column
+          .map((row) => Number((row as [string, string])[1])) // Cast row to [string, string]
           .filter((v: number) => !isNaN(v));
         resolve(signal);
       },
@@ -39,11 +39,14 @@ export async function loadBeatLevelData(ecgPath: string, annPath: string, beatLe
       header: true,
       complete: (results) => {
         const anns = results.data
-          .map((row: any) => ({
-            index: Number(row.index),
-            annotation_symbol: row.annotation_symbol
-          }))
-          .filter((ann: any) => !isNaN(ann.index));
+          .map((row) => {
+            const r = row as { index: string; annotation_symbol: string };
+            return {
+              index: Number(r.index),
+              annotation_symbol: r.annotation_symbol
+            };
+          })
+          .filter((ann: { index: number; annotation_symbol: string }) => !isNaN(ann.index));
         resolve(anns);
       },
       error: reject
@@ -317,9 +320,7 @@ export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, l
   // Evaluate on test set
   const evalResult = await model.evaluate(xTest, yTest);
   let testAcc = 0;
-  let testLoss = 0;
   if (Array.isArray(evalResult)) {
-    testLoss = (await evalResult[0].data())[0];
     testAcc = (await evalResult[1].data())[0] * 100;
   } else {
     testAcc = (await evalResult.data())[0] * 100;

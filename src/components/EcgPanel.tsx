@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useRef, useState } from "react";
-import { Heart, Bluetooth, Eye, EyeOff, Activity, Timer, Zap, BarChart3, TrendingUp, Play, Square, Clock } from "lucide-react";
+import { Bluetooth, Eye, EyeOff, Activity, Zap, BarChart3, TrendingUp, Play, Square, Clock } from "lucide-react";
 import { WebglPlot, WebglLine, ColorRGBA } from "webgl-plot";
 import { BPMCalculator } from '../lib/bpmCalculator';
 import { NotchFilter, ECGFilter } from '../lib/filters';

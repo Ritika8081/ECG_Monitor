@@ -1,3 +1,5 @@
+import type { PQRSTPoint } from './pqrstDetector';
+
 export interface ECGIntervals {
   rr: number;       // RR interval in ms
   pr: number;       // PR interval in ms
@@ -33,7 +35,7 @@ export class ECGIntervalCalculator {
    * @param pqrstPoints Array of detected PQRST points
    * @returns ECG intervals or null if not enough points
    */
-  calculateIntervals(pqrstPoints: any[]): ECGIntervals | null {
+  calculateIntervals(pqrstPoints: PQRSTPoint[]): ECGIntervals | null {
     // Group points by their PQRST complex
     const complexes = this.groupIntoComplexes(pqrstPoints);
     
@@ -123,14 +125,14 @@ export class ECGIntervalCalculator {
   /**
    * Groups PQRST points into cardiac complexes
    */
-  private groupIntoComplexes(points: any[]): any[][] {
+  private groupIntoComplexes(points: PQRSTPoint[]): PQRSTPoint[][] {
     if (points.length === 0) return [];
     
     // Sort points by position
     const sortedPoints = [...points].sort((a, b) => a.absolutePosition - b.absolutePosition);
     
-    const complexes: any[][] = [];
-    let currentComplex: any[] = [];
+    const complexes: PQRSTPoint[][] = [];
+    let currentComplex: PQRSTPoint[] = [];
     let lastRPosition = -1;
     
     // Group points by R wave
@@ -158,7 +160,7 @@ export class ECGIntervalCalculator {
   /**
    * Checks if a complex has all required PQRST points
    */
-  private isCompleteComplex(complex: any[]): boolean {
+  private isCompleteComplex(complex: PQRSTPoint[]): boolean {
     const types = complex.map(p => p.type);
     return (
       types.includes('P') && 
@@ -172,7 +174,7 @@ export class ECGIntervalCalculator {
   /**
    * Finds a point by type in a complex
    */
-  private findPointByType(complex: any[], type: string): any | null {
+  private findPointByType(complex: PQRSTPoint[], type: string): PQRSTPoint | null {
     return complex.find(p => p.type === type) || null;
   }
   

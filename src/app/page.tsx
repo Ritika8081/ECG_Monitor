@@ -2,19 +2,37 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useModel } from '@/providers/ModelProvider';
-import { Activity, Bluetooth, Eye, EyeOff, TrendingUp, BarChart3 } from 'lucide-react';
 import EcgPanel from '../components/EcgPanel';
 
 export default function HomePage() {
-  const { predict, isLoading: modelLoading } = useModel();
-  const [connected, setConnected] = useState(false);
-  const [ecgData, setEcgData] = useState<number[]>([]);
-  const [ecgIntervals, setEcgIntervals] = useState<any>(null);
-  const [hrvMetrics, setHrvMetrics] = useState<any>(null);
-  const [modelPrediction, setModelPrediction] = useState<any>(null);
-  const [autoAnalyze, setAutoAnalyze] = useState(false);
+  const { predict } = useModel();
   const autoAnalyzeInterval = useRef<NodeJS.Timeout | null>(null);
   
+  type EcgIntervals = {
+    rr?: number;
+    bpm?: number;
+    pr?: number;
+    qrs?: number;
+    qt?: number;
+    qtc?: number;
+    stDeviation?: number;
+  };
+
+  type HrvMetrics = {
+    rmssd?: number;
+    sdnn?: number;
+    lfhf?: { ratio?: number };
+  };
+
+  type ModelPrediction = {
+    prediction: string;
+    confidence: number;
+  };
+
+  const [ecgIntervals, setEcgIntervals] = useState<EcgIntervals | null>(null);
+  const [hrvMetrics, setHrvMetrics] = useState<HrvMetrics | null>(null);
+  const [modelPrediction, setModelPrediction] = useState<ModelPrediction | null>(null);
+
   // Extract ECG features from current data
   const extractEcgFeatures = () => {
     if (!ecgIntervals || !hrvMetrics) return null;
@@ -61,26 +79,12 @@ export default function HomePage() {
     }
   };
   
-  // Toggle automatic analysis
-  const toggleAutoAnalyze = () => {
-    if (autoAnalyze) {
-      if (autoAnalyzeInterval.current) {
-        clearInterval(autoAnalyzeInterval.current);
-        autoAnalyzeInterval.current = null;
-      }
-      setAutoAnalyze(false);
-    } else {
-      analyzeCurrent(); // Run immediately
-      autoAnalyzeInterval.current = setInterval(analyzeCurrent, 10000); // Then every 10 seconds
-      setAutoAnalyze(true);
-    }
-  };
-  
   // Clean up interval on unmount
   useEffect(() => {
     return () => {
-      if (autoAnalyzeInterval.current) {
-        clearInterval(autoAnalyzeInterval.current);
+      const interval = autoAnalyzeInterval.current;
+      if (interval) {
+        clearInterval(interval);
       }
     };
   }, []);
@@ -121,12 +125,8 @@ export default function HomePage() {
               {modelPrediction.confidence.toFixed(1)}% confidence
             </div>
           </div>
-          
-          {/* Probabilities and details as needed */}
         </div>
       )}
-      
-     
     </div>
   );
 }

@@ -99,7 +99,6 @@ export default function HeartDiseaseAnalysis({
   // Ensure consistent calculations between RR and HR
   function validateHeartMetrics(rrInterval: number, heartRate: number) {
     const calculatedHR = Math.round(60000 / rrInterval);
-    const calculatedRR = Math.round(60000 / heartRate);
     
     // If discrepancy is > 3%, use the most reliable source
     if (Math.abs(calculatedHR - heartRate) / heartRate > 0.03) {
@@ -108,18 +107,17 @@ export default function HeartDiseaseAnalysis({
       // Determine which is more reliable based on your data source
       // Example: if direct ECG measurement, RR is typically more accurate
       return {
-        correctedRR: rrInterval, 
         correctedHR: calculatedHR
       };
     }
     
-    return { correctedRR: rrInterval, correctedHR: heartRate };
+    return { correctedHR: heartRate };
   }
   
   // Add this validation before making the prediction
-  const validateFeatures = (features: any) => {
+  const validateFeatures = (features: EcgFeatures) => {
     // Check RR and HR consistency
-    const { correctedHR, correctedRR } = validateHeartMetrics(features.rr, features.bpm);
+    const { correctedHR } = validateHeartMetrics(features.rr, features.bpm);
     
     // If difference between calculated and input HR is > 5 BPM, there's a problem
     if (Math.abs(correctedHR - features.bpm) > 5) {

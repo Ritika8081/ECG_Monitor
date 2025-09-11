@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { trainBeatLevelECGModelAllFiles } from '@/lib/modelTrainer';
 
-import { testLoadModel, checkModelExists } from '../../lib/modelTester';
+import { checkModelExists } from '../../lib/modelTester';
 import ModelInspector from '../../components/ModelInspector';
 import NavBar from '../../components/NavBar';
 
@@ -12,8 +12,6 @@ export default function TrainPage() {
   const [trainingComplete, setTrainingComplete] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelExists, setModelExists] = useState(false);
-  const [modelPrediction, setModelPrediction] = useState<any>(null); // Add state for model prediction
-  const [progress, setProgress] = useState<string>("Not started");
 
   useEffect(() => {
 
@@ -25,7 +23,6 @@ export default function TrainPage() {
     setIsTraining(true);
     setError(null);
     setTrainingComplete(false);
-    setProgress("Training started...");
     
     try {
       console.log("🚀 Starting training...");
@@ -33,7 +30,6 @@ export default function TrainPage() {
       console.log("✅ Training completed!");
       setTrainingComplete(true);
       setModelExists(true);
-      setProgress("Training complete!");
     } catch (err) {
       console.error("❌ Training failed:", err);
       setError(err instanceof Error ? err.message : 'Training failed');
@@ -41,13 +37,6 @@ export default function TrainPage() {
       setIsTraining(false);
     }
   };
-
-  // Add this function to your component to handle dismissing the prediction
-  const dismissPrediction = () => {
-    setModelPrediction(null);
-  };
-
-
 
   return (
     <div className="w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-auto">
@@ -79,7 +68,7 @@ export default function TrainPage() {
                   <p>• Training uses 6 example ECG condition patterns</p>
                   <p>• Model learns to recognize patterns in 10 ECG metrics</p>
                   <p>• Training happens in your browser using TensorFlow.js</p>
-                  <p>• Trained model is saved in your browser's local storage</p>
+                  <p>• Trained model is saved in your browser&apos;s local storage</p>
                 </div>
               </div>
               

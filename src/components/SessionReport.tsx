@@ -5,8 +5,6 @@ import {
   FileText, User, Clock, Activity, Heart, TrendingUp, 
   Zap, AlertTriangle, ClipboardList
 } from 'lucide-react';
-import * as tf from '@tensorflow/tfjs';
-import { AAMI_CLASSES } from "../lib/modelTrainer"; // Add this import
 
 // Add this mapping for readable labels
 const predictionLabels: Record<string, string> = {

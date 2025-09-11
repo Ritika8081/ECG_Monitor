@@ -33,11 +33,11 @@ export default function DocsPage() {
                 <h3 className="text-lg font-medium text-green-400 mb-2">Getting Started</h3>
                 <ol className="list-decimal list-inside text-gray-300 space-y-1">
                   <li>Visit the <Link href="/train" className="text-blue-400 hover:underline">Training Page</Link></li>
-                  <li>Train the model using the "Train Model" button</li>
+                  <li>Train the model using the &quot;Train Model&quot; button</li>
                   <li>Inspect the model structure and weights</li>
                   <li>Return to the <Link href="/" className="text-blue-400 hover:underline">ECG Monitor</Link></li>
                   <li>Connect your ECG device using the Bluetooth button</li>
-                  <li>Toggle the "AI Analysis" button to see real-time beat predictions</li>
+                  <li>Toggle the &quot;AI Analysis&quot; button to see real-time beat predictions</li>
                 </ol>
               </div>
             </div>
