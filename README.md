@@ -1,54 +1,106 @@
 # ECG Monitor Next
 
-This is an advanced [Next.js](https://nextjs.org) application for real-time ECG monitoring, AI-based beat classification, and heart disease analysis. It connects to Bluetooth ECG devices, visualizes ECG signals, and provides AI-powered insights.
+ECG Monitor Next is a comprehensive web application built with [Next.js](https://nextjs.org) for real-time ECG monitoring, AI-powered beat classification, and heart disease analysis. It is designed for researchers, students, and developers interested in biomedical signal processing and machine learning for healthcare.
 
-## Features
+---
 
-- **Bluetooth ECG Device Connection:** Connect and stream ECG data in real time.
-- **Live ECG Visualization:** Interactive ECG waveform panel.
-- **AI Beat Classification:** Detects normal and abnormal beats using a trained neural network.
-- **Heart Disease Analysis:** Calculates HRV metrics and provides risk analysis.
-- **Session Recording:** Record, save, and review ECG sessions with patient info.
-- **Model Training & Inspection:** Train your own ECG classifier and inspect model structure and weights.
-- **Documentation:** Built-in docs for usage and workflow.
+## Important: First-Time User Steps
 
-## Getting Started
+Before you can use the AI features and beat classification, **you must train your model** using the built-in ECG datasets.  
+Follow these steps to get started:
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+### 1. **Train the AI Model (Required for First Use)**
 
-2. **Run the development server:**
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   # or
-   pnpm dev
-   # or
-   bun dev
-   ```
+1. Go to the **Training** page (`/train`).
+2. Click the **Train Model** button.
+3. Wait for the training process to complete. This may take a few minutes.
+4. Once training is finished, the model will be saved in your browser's local storage.
+5. You can now use the AI Analysis and Model Inspector features.
 
-3. **Open your browser:**
-   Visit [http://localhost:3000](http://localhost:3000) to use the app.
+> **Note:**  
+> If you clear your browser data or use a new device, you will need to retrain the model.
 
-## Usage Workflow
+---
 
-1. **Connect Device:**  
-   Use the Bluetooth button on the main page to connect your ECG device.
+## How to Use This Application
 
-2. **Monitor ECG:**  
-   View live ECG data and toggle AI Analysis for beat predictions.
+### 2. **Setup and Installation**
 
-3. **Record Session:**  
-   Start and stop recording sessions. Enter patient info for each session.
+- **Clone the repository** and install dependencies:
+  ```bash
+  git clone https://github.com/yourusername/ECG_Monitor.git
+  cd ECG_Monitor/ecg-monitor-next
+  npm install
+  ```
 
-4. **Analyze Results:**  
-   Review session reports with HRV metrics, beat classification, and heart disease risk.
+- **Start the development server:**
+  ```bash
+  npm run dev
+  ```
+  Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-5. **Train Model:**  
-   Go to the Training page to train or inspect your AI model.
+---
+
+### 3. **Connecting Your ECG Device**
+
+- On the main page, click the **Bluetooth** button.
+- Select your ECG device from the list and connect.
+- Once connected, live ECG data will stream and display on the waveform panel.
+
+---
+
+### 4. **Monitoring and Analyzing ECG**
+
+- **Live Visualization:**  
+  Watch your ECG waveform update in real time.
+- **AI Analysis:**  
+  Toggle the **AI Analysis** button to enable beat classification. The app will highlight detected beats and display their type.
+- **Session Recording:**  
+  Click **Start Recording** to begin a session. Enter patient information if prompted. Click **Stop Recording** to end the session.
+
+---
+
+### 5. **Reviewing Session Reports**
+
+- After recording, view the **Session Report** for detailed analysis:
+  - Beat classification summary
+  - HRV metrics (RMSSD, SDNN, LF/HF ratio, etc.)
+  - Heart disease risk indicators
+  - Patient information and session details
+
+---
+
+### 6. **Training and Inspecting the AI Model**
+
+- Go to the **Training** page.
+- Click **Train Model** to train a new neural network using built-in ECG datasets.
+- Inspect the model’s structure, weights, and performance metrics.
+- Use the **Model Inspector** to test predictions with your own ECG data.
+
+---
+
+### 7. **Documentation and Help**
+
+- Visit the **Docs** page for step-by-step instructions, workflow diagrams, and troubleshooting tips.
+- Each page includes tooltips and guidance for new users.
+
+---
+
+## How Is This Application Helpful?
+
+- **For Researchers:**  
+  Rapidly prototype and test ECG analysis algorithms, visualize results, and export session data for further study.
+
+- **For Students:**  
+  Learn about ECG signal processing, machine learning, and biomedical engineering with hands-on tools.
+
+- **For Developers:**  
+  Integrate real-time biomedical data streams, experiment with TensorFlow.js models, and extend the app for custom use cases.
+
+- **For Healthcare Enthusiasts:**  
+  Understand your heart’s activity, explore AI-powered analysis, and record sessions for personal tracking (not for medical diagnosis).
+
+---
 
 ## Project Structure
 
@@ -60,18 +112,28 @@ This is an advanced [Next.js](https://nextjs.org) application for real-time ECG 
 - `src/app/train/page.tsx` — Model training workflow.
 - `src/lib/` — Core logic for ECG processing, AI, and HRV calculation.
 
+---
+
+## Deployment
+
+- **Local:**  
+  Run with `npm run dev` for development.
+- **Production:**  
+  Deploy on [Vercel](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme), GitHub Pages, or any static hosting platform.  
+  Ensure all required CSV data files are present in the `public` folder and update file paths for your hosting environment.
+
+---
+
 ## Learn More
 
 - [Next.js Documentation](https://nextjs.org/docs)
 - [ECG Signal Processing](https://en.wikipedia.org/wiki/Electrocardiography)
 - [TensorFlow.js](https://www.tensorflow.org/js)
 
-## Deployment
-
-Deploy easily on [Vercel](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) or your preferred platform.
-
-See [Next.js deployment docs](https://nextjs.org/docs/app/building-your-application/deploying) for details.
-
 ---
-**Note:**  
-This project is for research and educational purposes. It is not intended for medical diagnosis or treatment. Consult healthcare professionals for medical advice.
+
+## Disclaimer
+
+This project is for research and educational purposes only.  
+It is **not intended for medical diagnosis or treatment**.  
+Consult healthcare professionals for medical advice.

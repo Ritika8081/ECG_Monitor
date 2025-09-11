@@ -3,9 +3,7 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import * as tf from '@tensorflow/tfjs';
-// TODO: Replace with the correct import or definition for classLabels
-const classLabels = ['ClassA', 'ClassB', 'ClassC']; // Example: define your class labels here
-// import { classLabels } from '@/lib/modelTrainer'; // Uncomment if available
+import { classLabels } from '@/lib/modelTrainer'; // Use your actual class labels
 
 type ModelContextType = {
   model: tf.LayersModel | null;
@@ -28,20 +26,19 @@ export function ModelProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function loadModel() {
       try {
-        // Initialize TensorFlow.js
         await tf.ready();
         console.log('TensorFlow.js initialized');
-        
+
         // Check if model exists in localStorage
         const models = await tf.io.listModels();
-        if (!models['localstorage://ecg-disease-model']) {
+        if (!models['localstorage://beat-level-ecg-model']) {
           setError('No model found in browser storage. Please train the model first.');
           setIsLoading(false);
           return;
         }
-        
+
         // Load the model
-        const loadedModel = await tf.loadLayersModel('localstorage://ecg-disease-model');
+        const loadedModel = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
         console.log('Model loaded successfully');
         setModel(loadedModel);
         setIsLoading(false);
@@ -51,7 +48,7 @@ export function ModelProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
     }
-    
+
     loadModel();
   }, []);
 
@@ -60,24 +57,18 @@ export function ModelProvider({ children }: { children: ReactNode }) {
     if (!model) return null;
 
     try {
-      // Ensure features is length 720
       if (features.length !== 720) {
         throw new Error('Input features must be an array of length 720');
       }
 
-      // Reshape to [1, 720, 1]
       const inputTensor = tf.tensor(features, [1, 720, 1]);
-
-      // Run prediction
       const outputTensor = model.predict(inputTensor) as tf.Tensor;
       const probabilities = await outputTensor.data();
 
-      // Get class with highest probability
       const predictionArray = Array.from(probabilities);
       const maxProbIndex = predictionArray.indexOf(Math.max(...predictionArray));
       const predictedClass = classLabels[maxProbIndex];
 
-      // Create result object with all probabilities
       const result = {
         prediction: predictedClass,
         confidence: predictionArray[maxProbIndex] * 100,
@@ -87,7 +78,6 @@ export function ModelProvider({ children }: { children: ReactNode }) {
         })).sort((a, b) => b.probability - a.probability)
       };
 
-      // Cleanup tensors
       inputTensor.dispose();
       outputTensor.dispose();
 
@@ -99,7 +89,7 @@ export function ModelProvider({ children }: { children: ReactNode }) {
   };
 
   const value = { model, isLoading, error, predict };
-  
+
   return (
     <ModelContext.Provider value={value}>
       {children}
