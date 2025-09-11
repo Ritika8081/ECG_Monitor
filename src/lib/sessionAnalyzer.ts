@@ -94,10 +94,10 @@ export class SessionAnalyzer {
     try {
       // Try multiple model sources in order of preference
       const modelSources = [
-        'localstorage://ecg-disease-model',  // User-trained model
-        '/models/ecg-disease-model.json',   // Pretrained model in public folder
-        '/assets/models/ecg-disease-model.json', // Alternative path
-        'https://your-domain.com/models/ecg-disease-model.json' // Remote model
+         'localstorage://beat-level-ecg-model',  // User-trained model (correct name)
+        '/models/beat-level-ecg-model.json',    // Pretrained model in public folder (update name here)
+        '/assets/beat-level-ecg-model.json',    // Alternative path (update name here)
+        'https://your-domain.com/models/beat-level-ecg-model.json' // Remote model (update name here)
       ];
       
       for (const modelUrl of modelSources) {

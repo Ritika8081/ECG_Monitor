@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import { zscoreNorm } from '../lib/modelTrainer'; // Make sure this is exported
+import { zscoreNorm, classLabels } from '../lib/modelTrainer'; // Ensure classLabels is exported
 
 
 export default function ModelInspector() {
@@ -14,7 +14,7 @@ export default function ModelInspector() {
   const [testInputText, setTestInputText] = useState<string>('');
   const [testInputs, setTestInputs] = useState<number[]>(Array.from({ length: 720 }, () => Math.random() * 2 - 1));
   const [prediction, setPrediction] = useState<any>(null);
-  
+
   // Load model on component mount
   useEffect(() => {
     async function loadModel() {
@@ -22,26 +22,26 @@ export default function ModelInspector() {
       try {
         // Check if model exists in localStorage
         const models = await tf.io.listModels();
-        if (!models['localstorage://ecg-disease-model']) {
+        if (!models['localstorage://beat-level-ecg-model']) {
           setError('No model found in local storage. Please train the model first.');
           setLoading(false);
           return;
         }
-        
+
         // Load the model
-        const loadedModel = await tf.loadLayersModel('localstorage://ecg-disease-model');
+        const loadedModel = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
         setModel(loadedModel);
-        
+
         // Extract model info
         const layers = loadedModel.layers;
         const summary = [];
-        
+
         for (let i = 0; i < layers.length; i++) {
           const layer = layers[i];
           const config = layer.getConfig();
           const weights = layer.getWeights();
           const weightShapes = weights.map(w => w.shape);
-          
+
           summary.push({
             name: layer.name,
             type: layer.getClassName(),
@@ -51,14 +51,14 @@ export default function ModelInspector() {
             activation: config.activation
           });
         }
-        
+
         setModelInfo({
           layers: summary,
           totalLayers: layers.length,
           inputShape: loadedModel.inputs[0].shape,
           outputShape: loadedModel.outputs[0].shape
         });
-        
+
         setLoading(false);
       } catch (err) {
         console.error('Error loading model:', err);
@@ -66,10 +66,10 @@ export default function ModelInspector() {
         setLoading(false);
       }
     }
-    
+
     loadModel();
   }, []);
-  
+
   // Handle textarea change
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setTestInputText(e.target.value);
@@ -79,7 +79,7 @@ export default function ModelInspector() {
       .filter(v => !isNaN(v));
     if (arr.length === 720) setTestInputs(arr);
   };
-  
+
   // Make prediction with the model
   const handlePredict = async () => {
     if (!model) return;
@@ -92,7 +92,6 @@ export default function ModelInspector() {
 
       const predictionArray = Array.from(probabilities);
       const maxProbIndex = predictionArray.indexOf(Math.max(...predictionArray));
-      const classLabels = JSON.parse(localStorage.getItem('ecg-class-labels') || '[]');
       const predictedClass = classLabels[maxProbIndex];
 
       const result = {
@@ -101,7 +100,7 @@ export default function ModelInspector() {
         allProbabilities: classLabels.map((label: string, index: number) => ({
           label,
           probability: predictionArray[index] * 100
-        })).sort((a: { label: string; probability: number }, b: { label: string; probability: number }) => b.probability - a.probability)
+        })).sort((a, b) => b.probability - a.probability)
       };
 
       setPrediction(result);
@@ -113,20 +112,20 @@ export default function ModelInspector() {
       setError(err instanceof Error ? err.message : 'Prediction failed');
     }
   };
-  
+
   // Handle input change for test values
   const handleInputChange = (index: number, value: string) => {
     const newInputs = [...testInputs];
     newInputs[index] = parseFloat(value);
     setTestInputs(newInputs);
   };
-  
+
   // Reset test inputs to default
   const resetInputs = () => {
     setTestInputs([950, 60, 180, 100, 380, 450, 0.1, 30, 40, 2.0]);
     setPrediction(null);
   };
-  
+
   // Render loading state
   if (loading) {
     return (
@@ -139,7 +138,7 @@ export default function ModelInspector() {
       </div>
     );
   }
-  
+
   // Render error state
   if (error) {
     return (
@@ -151,34 +150,34 @@ export default function ModelInspector() {
       </div>
     );
   }
-  
+
   // Render tabs and content
   return (
     <div className="bg-black/40 backdrop-blur-sm border border-white/20 rounded-xl p-6 h-full flex flex-col">
       <h2 className="text-xl font-bold text-white mb-4">Model Inspector</h2>
-      
+
       {/* Tabs */}
       <div className="flex border-b border-white/20 mb-4">
-        <button 
+        <button
           className={`px-4 py-2 font-medium ${activeTab === 'structure' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400'}`}
           onClick={() => setActiveTab('structure')}
         >
           Structure
         </button>
-        <button 
+        <button
           className={`px-4 py-2 font-medium ${activeTab === 'weights' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400'}`}
           onClick={() => setActiveTab('weights')}
         >
           Weights
         </button>
-        <button 
+        <button
           className={`px-4 py-2 font-medium ${activeTab === 'test' ? 'text-blue-400 border-b-2 border-blue-400' : 'text-gray-400'}`}
           onClick={() => setActiveTab('test')}
         >
           Test Model
         </button>
       </div>
-      
+
       {/* Tab Content - Make this scrollable */}
       <div className="overflow-y-auto flex-1 pr-2 scrollable-content h-full max-h-[80vh]">
         {/* Structure Tab */}
@@ -190,10 +189,9 @@ export default function ModelInspector() {
                 <p>Total Layers: {modelInfo.totalLayers}</p>
                 <p>Input Shape: [{modelInfo.inputShape.slice(1).join(', ')}]</p>
                 <p>Output Shape: [{modelInfo.outputShape.slice(1).join(', ')}]</p>
-               
               </div>
             </div>
-            
+
             <h3 className="text-white font-medium mb-2">Layers</h3>
             {modelInfo.layers.map((layer: any, index: number) => (
               <div key={index} className="mb-4 p-3 bg-black/20 border border-white/10 rounded-lg">
@@ -205,7 +203,7 @@ export default function ModelInspector() {
                   <p className="text-gray-300">Units: {layer.units}</p>
                   <p className="text-gray-300">Activation: {layer.activation}</p>
                   <p className="text-gray-300">
-                    Weight Shapes: {layer.weightShapes.map((shape: number[]) => 
+                    Weight Shapes: {layer.weightShapes.map((shape: number[]) =>
                       `[${shape.join(', ')}]`
                     ).join(', ')}
                   </p>
@@ -214,7 +212,7 @@ export default function ModelInspector() {
             ))}
           </div>
         )}
-        
+
         {/* Weights Tab */}
         {activeTab === 'weights' && model && (
           <div>
@@ -224,28 +222,28 @@ export default function ModelInspector() {
                 This section shows the distribution of weights in each layer of the model.
               </p>
             </div>
-            
+
             {model.layers.map((layer, index) => {
               const weights = layer.getWeights();
               if (weights.length === 0) return null;
-              
+
               return (
                 <div key={index} className="mb-4 p-3 bg-black/20 border border-white/10 rounded-lg">
                   <h4 className="text-white mb-2">{layer.name}</h4>
-                  
+
                   {weights.map((weight, wIndex) => {
                     // Get weight data
                     const data = weight.dataSync();
                     const min = Math.min(...Array.from(data));
                     const max = Math.max(...Array.from(data));
                     const avg = Array.from(data).reduce((a, b) => a + b, 0) / data.length;
-                    
+
                     return (
                       <div key={wIndex} className="mb-3">
                         <p className="text-sm text-gray-400">
                           {wIndex === 0 ? 'Weights' : 'Biases'} [{weight.shape.join('×')}]
                         </p>
-                        
+
                         {/* Weight statistics */}
                         <div className="grid grid-cols-3 gap-2 mt-1 text-xs">
                           <div className="p-1 bg-black/30 rounded">
@@ -258,7 +256,7 @@ export default function ModelInspector() {
                             <span className="text-red-400">Max: {max.toFixed(4)}</span>
                           </div>
                         </div>
-                        
+
                         {/* Simple histogram (10 buckets) */}
                         {data.length > 0 && (
                           <div className="mt-2 h-10 flex items-end">
@@ -269,14 +267,14 @@ export default function ModelInspector() {
                                 v => v >= bucketMin && v < bucketMax
                               ).length;
                               const height = `${Math.max(5, (bucketCount / data.length) * 100)}%`;
-                              
+
                               return (
-                                <div 
-                                  key={i} 
-                                  className="flex-1 mx-px" 
-                                  style={{ 
-                                    height, 
-                                    backgroundColor: `rgba(59, 130, 246, ${0.3 + (i / 10) * 0.7})` 
+                                <div
+                                  key={i}
+                                  className="flex-1 mx-px"
+                                  style={{
+                                    height,
+                                    backgroundColor: `rgba(59, 130, 246, ${0.3 + (i / 10) * 0.7})`
                                   }}
                                   title={`${bucketCount} values between ${bucketMin.toFixed(4)} and ${bucketMax.toFixed(4)}`}
                                 />
@@ -292,14 +290,14 @@ export default function ModelInspector() {
             })}
           </div>
         )}
-        
+
         {/* Test Tab */}
         {activeTab === 'test' && (
           <div>
             <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
               <h3 className="text-green-400 font-medium mb-2">Test Model</h3>
               <p className="text-sm text-white">
-                Paste 720 comma-separated ECG values below and click "Predict" to test the model.
+                Paste 720 comma-separated ECG values below and click &quot;Predict&quot; to test the model.
               </p>
             </div>
             <textarea
@@ -324,12 +322,12 @@ export default function ModelInspector() {
                 Reset
               </button>
             </div>
-            
+
             {/* Prediction Results */}
             {prediction && (
               <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                 <h3 className="text-green-400 font-medium mb-3">Prediction Results</h3>
-                
+
                 <div className="mb-4 text-center">
                   <div className="text-3xl font-bold text-white mb-1">
                     {prediction.prediction}
@@ -338,15 +336,15 @@ export default function ModelInspector() {
                     {prediction.confidence.toFixed(2)}% confidence
                   </div>
                 </div>
-                
+
                 <div className="space-y-2">
                   {prediction.allProbabilities.map((item: any, index: number) => (
                     <div key={index} className="flex items-center">
                       <div className="w-32 text-sm text-white">{item.label}</div>
                       <div className="flex-1 h-5 bg-black/40 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full rounded-full" 
-                          style={{ 
+                        <div
+                          className="h-full rounded-full"
+                          style={{
                             width: `${item.probability}%`,
                             backgroundColor: getColorForProbability(item.probability)
                           }}
