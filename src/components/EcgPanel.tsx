@@ -81,8 +81,8 @@ export default function EcgFullPanel() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const labels = JSON.parse(localStorage.getItem('ecg-class-labels') || '[]');
-      setClassLabels(labels);
+      const labels = JSON.parse(localStorage.getItem('ecg-class-labels') || 'null');
+      setClassLabels(Array.isArray(labels) && labels.length > 0 ? labels : AAMI_CLASSES);
     }
   }, []);
 
