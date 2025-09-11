@@ -200,56 +200,69 @@ export async function trainBeatLevelECGModel(ecgPath: string, annPath: string, o
   return model;
 }
 
+// Dynamically determine base path for static assets
+function getBasePath() {
+  if (typeof window !== "undefined") {
+    // If running on GitHub Pages, served from /ECG_Monitor/
+    if (window.location.pathname.startsWith("/ECG_Monitor")) {
+      return "/ECG_Monitor";
+    }
+  }
+  return "";
+}
+
+const BASE_PATH = getBasePath();
+
 export const allFilePairs = [
-    { ecg: "/100_ekg.csv", ann: "/100_annotations_1.csv" },
-    { ecg: "/101_ekg.csv", ann: "/101_annotations_1.csv" },
-    { ecg: "/102_ekg.csv", ann: "/102_annotations_1.csv" },
-    { ecg: "/103_ekg.csv", ann: "/103_annotations_1.csv" },
-    { ecg: "/104_ekg.csv", ann: "/104_annotations_1.csv" },
-    { ecg: "/105_ekg.csv", ann: "/105_annotations_1.csv" },
-    { ecg: "/106_ekg.csv", ann: "/106_annotations_1.csv" },
-    { ecg: "/107_ekg.csv", ann: "/107_annotations_1.csv" },
-    { ecg: "/108_ekg.csv", ann: "/108_annotations_1.csv" },
-    { ecg: "/109_ekg.csv", ann: "/109_annotations_1.csv" },
-    { ecg: "/111_ekg.csv", ann: "/111_annotations_1.csv" },
-    { ecg: "/112_ekg.csv", ann: "/112_annotations_1.csv" },
-    { ecg: "/113_ekg.csv", ann: "/113_annotations_1.csv" },
-    { ecg: "/114_ekg.csv", ann: "/114_annotations_1.csv" },
-    { ecg: "/115_ekg.csv", ann: "/115_annotations_1.csv" },
-    { ecg: "/116_ekg.csv", ann: "/116_annotations_1.csv" },
-    { ecg: "/117_ekg.csv", ann: "/117_annotations_1.csv" },
-    { ecg: "/118_ekg.csv", ann: "/118_annotations_1.csv" },
-    { ecg: "/119_ekg.csv", ann: "/119_annotations_1.csv" },
-    { ecg: "/121_ekg.csv", ann: "/121_annotations_1.csv" },
-    { ecg: "/122_ekg.csv", ann: "/122_annotations_1.csv" },
-    { ecg: "/123_ekg.csv", ann: "/123_annotations_1.csv" },
-    { ecg: "/124_ekg.csv", ann: "/124_annotations_1.csv" },
-    { ecg: "/200_ekg.csv", ann: "/200_annotations_1.csv" },
-    { ecg: "/201_ekg.csv", ann: "/201_annotations_1.csv" },
-    { ecg: "/202_ekg.csv", ann: "/202_annotations_1.csv" },
-    { ecg: "/203_ekg.csv", ann: "/203_annotations_1.csv" },
-    { ecg: "/205_ekg.csv", ann: "/205_annotations_1.csv" },
-    { ecg: "/207_ekg.csv", ann: "/207_annotations_1.csv" },
-    { ecg: "/208_ekg.csv", ann: "/208_annotations_1.csv" },
-    { ecg: "/209_ekg.csv", ann: "/209_annotations_1.csv" },
-    { ecg: "/210_ekg.csv", ann: "/210_annotations_1.csv" },
-    { ecg: "/212_ekg.csv", ann: "/212_annotations_1.csv" },
-    { ecg: "/213_ekg.csv", ann: "/213_annotations_1.csv" },
-    { ecg: "/214_ekg.csv", ann: "/214_annotations_1.csv" },
-    { ecg: "/215_ekg.csv", ann: "/215_annotations_1.csv" },
-    { ecg: "/217_ekg.csv", ann: "/217_annotations_1.csv" },
-    { ecg: "/219_ekg.csv", ann: "/219_annotations_1.csv" },
-    { ecg: "/220_ekg.csv", ann: "/220_annotations_1.csv" },
-    { ecg: "/221_ekg.csv", ann: "/221_annotations_1.csv" },
-    { ecg: "/222_ekg.csv", ann: "/222_annotations_1.csv" },
-    { ecg: "/223_ekg.csv", ann: "/223_annotations_1.csv" },
-    { ecg: "/228_ekg.csv", ann: "/228_annotations_1.csv" },
-    { ecg: "/230_ekg.csv", ann: "/230_annotations_1.csv" },
-    { ecg: "/231_ekg.csv", ann: "/231_annotations_1.csv" },
-    { ecg: "/232_ekg.csv", ann: "/232_annotations_1.csv" },
-    { ecg: "/233_ekg.csv", ann: "/233_annotations_1.csv" },
-    { ecg: "/234_ekg.csv", ann: "/234_annotations_1.csv" }
-  ];
+  { ecg: `${BASE_PATH}/100_ekg.csv`, ann: `${BASE_PATH}/100_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/101_ekg.csv`, ann: `${BASE_PATH}/101_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/102_ekg.csv`, ann: `${BASE_PATH}/102_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/103_ekg.csv`, ann: `${BASE_PATH}/103_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/104_ekg.csv`, ann: `${BASE_PATH}/104_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/105_ekg.csv`, ann: `${BASE_PATH}/105_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/106_ekg.csv`, ann: `${BASE_PATH}/106_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/107_ekg.csv`, ann: `${BASE_PATH}/107_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/108_ekg.csv`, ann: `${BASE_PATH}/108_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/109_ekg.csv`, ann: `${BASE_PATH}/109_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/111_ekg.csv`, ann: `${BASE_PATH}/111_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/112_ekg.csv`, ann: `${BASE_PATH}/112_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/113_ekg.csv`, ann: `${BASE_PATH}/113_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/114_ekg.csv`, ann: `${BASE_PATH}/114_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/115_ekg.csv`, ann: `${BASE_PATH}/115_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/116_ekg.csv`, ann: `${BASE_PATH}/116_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/117_ekg.csv`, ann: `${BASE_PATH}/117_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/118_ekg.csv`, ann: `${BASE_PATH}/118_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/119_ekg.csv`, ann: `${BASE_PATH}/119_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/121_ekg.csv`, ann: `${BASE_PATH}/121_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/122_ekg.csv`, ann: `${BASE_PATH}/122_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/123_ekg.csv`, ann: `${BASE_PATH}/123_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/124_ekg.csv`, ann: `${BASE_PATH}/124_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/200_ekg.csv`, ann: `${BASE_PATH}/200_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/201_ekg.csv`, ann: `${BASE_PATH}/201_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/202_ekg.csv`, ann: `${BASE_PATH}/202_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/203_ekg.csv`, ann: `${BASE_PATH}/203_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/205_ekg.csv`, ann: `${BASE_PATH}/205_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/207_ekg.csv`, ann: `${BASE_PATH}/207_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/208_ekg.csv`, ann: `${BASE_PATH}/208_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/209_ekg.csv`, ann: `${BASE_PATH}/209_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/210_ekg.csv`, ann: `${BASE_PATH}/210_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/212_ekg.csv`, ann: `${BASE_PATH}/212_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/213_ekg.csv`, ann: `${BASE_PATH}/213_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/214_ekg.csv`, ann: `${BASE_PATH}/214_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/215_ekg.csv`, ann: `${BASE_PATH}/215_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/217_ekg.csv`, ann: `${BASE_PATH}/217_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/219_ekg.csv`, ann: `${BASE_PATH}/219_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/220_ekg.csv`, ann: `${BASE_PATH}/220_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/221_ekg.csv`, ann: `${BASE_PATH}/221_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/222_ekg.csv`, ann: `${BASE_PATH}/222_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/223_ekg.csv`, ann: `${BASE_PATH}/223_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/228_ekg.csv`, ann: `${BASE_PATH}/228_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/230_ekg.csv`, ann: `${BASE_PATH}/230_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/231_ekg.csv`, ann: `${BASE_PATH}/231_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/232_ekg.csv`, ann: `${BASE_PATH}/232_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/233_ekg.csv`, ann: `${BASE_PATH}/233_annotations_1.csv` },
+  { ecg: `${BASE_PATH}/234_ekg.csv`, ann: `${BASE_PATH}/234_annotations_1.csv` }
+];
 
 // --- Train using all file pairs ---
 export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, logs: tf.Logs) => void) {
