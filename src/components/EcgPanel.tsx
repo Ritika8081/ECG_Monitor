@@ -24,6 +24,7 @@ const NUM_POINTS = 1200;
 const SAMPLE_RATE = 500;
 const SINGLE_SAMPLE_LEN = 7;
 const NEW_PACKET_LEN = 7 * 10;
+const BATCH_SIZE = 20;
 
 export default function EcgFullPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -131,7 +132,17 @@ export default function EcgFullPanel() {
 
   // Add to EcgFullPanel component
   const [beatPredictions, setBeatPredictions] = useState<{ prediction: string, confidence: number }[]>([]);
-  const ROLLING_WINDOW_SIZE = 10; // Number of beats to aggregate (e.g., last 10 beats)
+  const [beatBuffer, setBeatBuffer] = useState<{ prediction: string, confidence: number }[]>([]);
+  const [batchResult, setBatchResult] = useState<{
+    summary: ReturnType<typeof getRollingSummary> | null,
+    latest: { prediction: string, confidence: number } | null
+  } | null>(null);
+  const [batchBeats, setBatchBeats] = useState<PQRSTPoint[][]>([]);
+  const [batchMetrics, setBatchMetrics] = useState<ECGIntervals | null>(null);
+  const [bpmTrend, setBpmTrend] = useState<number[]>([]);
+  const [batchReady, setBatchReady] = useState(false);
+  const [batchWarning, setBatchWarning] = useState<string | null>(null);
+  const ROLLING_WINDOW_SIZE = 20; // Number of beats to aggregate (e.g., last 10 beats)
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -225,13 +236,14 @@ export default function EcgFullPanel() {
     return 'Other';
   }
   // Add this function to see what data we have
-  function getRollingSummary() {
-    if (beatPredictions.length === 0) return null;
+  function getRollingSummary(buffer?: { prediction: string, confidence: number }[]) {
+    const arr = buffer ?? beatBuffer;
+    if (arr.length === 0) return null;
     const counts: Record<string, number> = {};
-    beatPredictions.forEach(bp => {
+    arr.forEach(bp => {
       counts[bp.prediction] = (counts[bp.prediction] || 0) + 1;
     });
-    const total = beatPredictions.length;
+    const total = arr.length;
     const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
     const majorityClass = sorted[0][0];
     const majorityPercent = (sorted[0][1] / total) * 100;
@@ -309,20 +321,20 @@ export default function EcgFullPanel() {
     }
 
     // // Debug logging
-    // console.log('Peaks detected:', peaks.length);
-    // console.log('PQRST points detected:', pqrstPoints.current.length);
+    console.log('Peaks detected:', peaks.length);
+    console.log('PQRST points detected:', pqrstPoints.current.length);
 
     // Extract RR intervals for HRV analysis
     if (peaks.length >= 2) {
-      // console.log('Extracting RR intervals from', peaks.length, 'peaks');
-      // hrvCalculator.current.extractRRFromPeaks(peaks, SAMPLE_RATE);
+      console.log('Extracting RR intervals from', peaks.length, 'peaks');
+      hrvCalculator.current.extractRRFromPeaks(peaks, SAMPLE_RATE);
 
       // Force update HRV metrics
       const metrics = hrvCalculator.current.getAllMetrics();
-      // console.log('HRV Metrics:', metrics);
+      console.log('HRV Metrics:', metrics);
       setHrvMetrics(metrics);
     } else {
-      // console.log('Not enough peaks for HRV analysis');
+      console.log('Not enough peaks for HRV analysis');
     }
 
     // Calculate ECG intervals when PQRST points are available
@@ -509,7 +521,16 @@ export default function EcgFullPanel() {
       // Add this to keep track of recent beat predictions
       setBeatPredictions(prev => {
         const updated = [...prev, { prediction: predictedClass, confidence }];
-        return updated.length > ROLLING_WINDOW_SIZE ? updated.slice(-ROLLING_WINDOW_SIZE) : updated;
+        if (updated.length >= BATCH_SIZE) {
+          // Calculate summary
+          const summary = getRollingSummary(updated);
+          setBatchResult({
+            summary,
+            latest: updated[updated.length - 1]
+          });
+          return []; // Clear buffer for next batch
+        }
+        return updated;
       });
 
       inputTensor.dispose();
@@ -1388,87 +1409,102 @@ export default function EcgFullPanel() {
             </div>
           ) : (
             <>
-              {/* Rolling Summary */}
-              {(() => {
-                const summary = getRollingSummary();
-                if (!summary) return null;
-                const predictionLabels: Record<string, string> = {
-                  "Normal": "Normal beat",
-                  "Supraventricular": "Supraventricular ectopic beat",
-                  "Ventricular": "Ventricular ectopic beat",
-                  "Fusion": "Fusion beat",
-                  "Other": "Other/unknown beat"
-                };
-                return (
-                  <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
-                      <span className="font-bold text-lg" style={{
-                        color:
-                          summary.majorityClass === "Normal" ? "#22c55e" :
-                            summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                      }}>
-                        {predictionLabels[summary.majorityClass] || summary.majorityClass}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
-                      <div
-                        className="h-1.5 rounded-full"
-                        style={{
-                          width: `${summary.majorityPercent}%`,
-                          backgroundColor:
-                            summary.majorityClass === "Normal" ? "#22c55e" :
-                              summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                        }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {summary.majorityPercent.toFixed(1)}% {predictionLabels[summary.majorityClass] || summary.majorityClass} in last {summary.total} beats.
-                    </p>
-                    <ul className="mt-2 text-xs text-gray-300">
-                      {Object.entries(summary.counts).map(([cls, cnt]) => (
-                        <li key={cls}>
-                          {predictionLabels[cls] || cls}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
-                        </li>
-                      ))}
-                    </ul>
-                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
-                      <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
-                        Warning: Abnormal rhythm detected!
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* Per-beat prediction (latest beat) */}
-              {modelPrediction && (
-                <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-gray-300">Latest Beat:</span>
-                    <span className="font-bold text-lg" style={{
-                      color:
-                        modelPrediction.prediction === "Normal" ? "#22c55e" :
-                          modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-                    }}>
-                      {modelPrediction.prediction}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-700 rounded-full h-1.5">
-                    <div
-                      className="h-1.5 rounded-full"
-                      style={{
-                        width: `${modelPrediction.confidence}%`,
-                        backgroundColor:
-                          modelPrediction.prediction === "Normal" ? "#22c55e" :
-                            modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-                      }}
-                    ></div>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Confidence: {modelPrediction.confidence.toFixed(1)}%
+              {/* Only show summary if batchResult is ready */}
+              {!batchResult ? (
+                <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
+                  <span className="font-bold text-lg text-yellow-400">Collecting beats...</span>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Waiting to collect {BATCH_SIZE} heartbeats for analysis.
+                  </p>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Collected: {beatPredictions.length} / {BATCH_SIZE}
                   </p>
                 </div>
+              ) : (
+                <>
+                  {/* Rolling Summary */}
+                  {(() => {
+                    const summary = batchResult.summary;
+                    if (!summary) return null;
+                    const predictionLabels: Record<string, string> = {
+                      "Normal": "Normal beat",
+                      "Supraventricular": "Supraventricular ectopic beat",
+                      "Ventricular": "Ventricular ectopic beat",
+                      "Fusion": "Fusion beat",
+                      "Other": "Other/unknown beat"
+                    };
+                    return (
+                      <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
+                          <span className="font-bold text-lg" style={{
+                            color:
+                              summary.majorityClass === "Normal" ? "#22c55e" :
+                                summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                          }}>
+                            {predictionLabels[summary.majorityClass] || summary.majorityClass}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
+                          <div
+                            className="h-1.5 rounded-full"
+                            style={{
+                              width: `${summary.majorityPercent}%`,
+                              backgroundColor:
+                                summary.majorityClass === "Normal" ? "#22c55e" :
+                                  summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                            }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {summary.majorityPercent.toFixed(1)}% {predictionLabels[summary.majorityClass] || summary.majorityClass} in last {summary.total} beats.
+                        </p>
+                        <ul className="mt-2 text-xs text-gray-300">
+                          {Object.entries(summary.counts).map(([cls, cnt]) => (
+                            <li key={cls}>
+                              {predictionLabels[cls] || cls}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
+                            </li>
+                          ))}
+                        </ul>
+                        {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
+                          <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                            Warning: Abnormal rhythm detected!
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Per-beat prediction (latest beat) */}
+                  {modelPrediction && (
+                    <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-gray-300">Latest Beat:</span>
+                        <span className="font-bold text-lg" style={{
+                          color:
+                            modelPrediction.prediction === "Normal" ? "#22c55e" :
+                              modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                        }}>
+                          {modelPrediction.prediction}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-700 rounded-full h-1.5">
+                        <div
+                          className="h-1.5 rounded-full"
+                          style={{
+                            width: `${modelPrediction.confidence}%`,
+                            backgroundColor:
+                              modelPrediction.prediction === "Normal" ? "#22c55e" :
+                                modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                          }}
+                        ></div>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Confidence: {modelPrediction.confidence.toFixed(1)}%
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -1590,6 +1626,8 @@ export default function EcgFullPanel() {
                         PR interval: atria to ventricles
                       </div>
                     </div>
+
+
 
                     {/* QRS Duration with explanation */}
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
