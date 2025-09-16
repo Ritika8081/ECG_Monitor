@@ -21,3 +21,33 @@ export class ECGFilter {
     return output;
   }
 }
+export class HighPassFilter {
+  // State variables
+  private z1: number;
+  private z2: number;
+  private x1: number;
+
+  constructor() {
+    this.z1 = 0;
+    this.z2 = 0;
+    this.x1 = 0;
+  }
+
+  // Process input sample through the high-pass filter (0.5 Hz @ 500 Hz)
+  process(input: number): number {
+    let output = input;
+
+    // High-pass ~0.5 Hz @ fs=500 Hz (Butterworth, 2nd order)
+    this.x1 = output - (-1.99822285 * this.z1) - (0.99822443 * this.z2);
+    output =
+      (0.99911182 * this.x1) +
+      (-1.99822364 * this.z1) +
+      (0.99911182 * this.z2);
+
+    // Update states
+    this.z2 = this.z1;
+    this.z1 = this.x1;
+
+    return output;
+  }
+}

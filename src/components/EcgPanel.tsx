@@ -2,8 +2,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bluetooth, Eye, EyeOff, Activity, Zap, BarChart3, TrendingUp, Play, Square, Clock } from "lucide-react";
 import { WebglPlot, WebglLine, ColorRGBA } from "webgl-plot";
-import { BPMCalculator } from '../lib/bpmCalculator';
-import { NotchFilter, ECGFilter } from '../lib/filters';
+import { BPMCalculator, filterQRS } from '../lib/bpmCalculator';
+import { HighPassFilter, NotchFilter, ECGFilter } from "../lib/filters";
 import { HRVCalculator } from '../lib/hrvCalculator';
 import { PQRSTDetector, PQRSTPoint } from '../lib/pqrstDetector';
 import { PanTompkinsDetector } from '../lib/panTompkinsDetector';
@@ -104,7 +104,8 @@ export default function EcgFullPanel() {
   const dataCh0 = useRef(new Array(NUM_POINTS).fill(0));
   const peakData = useRef(new Array(NUM_POINTS).fill(0));
   const sampleIndex = useRef(0);
-  const notch = useRef(new NotchFilter());
+  const highpass = useRef(new HighPassFilter());
+  const notch = useRef(new NotchFilter()); // or NotchFilter60 for 60Hz regions
   const ecg = useRef(new ECGFilter());
   const bpmCalculator = useRef(new BPMCalculator(SAMPLE_RATE, 5, 40, 200));
   const hrvCalculator = useRef(new HRVCalculator()); // Add HRV calculator
@@ -137,12 +138,7 @@ export default function EcgFullPanel() {
     summary: ReturnType<typeof getRollingSummary> | null,
     latest: { prediction: string, confidence: number } | null
   } | null>(null);
-  const [batchBeats, setBatchBeats] = useState<PQRSTPoint[][]>([]);
-  const [batchMetrics, setBatchMetrics] = useState<ECGIntervals | null>(null);
-  const [bpmTrend, setBpmTrend] = useState<number[]>([]);
-  const [batchReady, setBatchReady] = useState(false);
-  const [batchWarning, setBatchWarning] = useState<string | null>(null);
-  const ROLLING_WINDOW_SIZE = 20; // Number of beats to aggregate (e.g., last 10 beats)
+  
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -157,9 +153,9 @@ export default function EcgFullPanel() {
     const line = new WebglLine(new ColorRGBA(0, 1, 0.2, 1), NUM_POINTS);
     line.arrangeX();
 
-    // Create peak line
-    const peakLine = new WebglLine(new ColorRGBA(1, 0.2, 0.2, 1), NUM_POINTS);
-    peakLine.arrangeX();
+    // // Create peak line
+    // const peakLine = new WebglLine(new ColorRGBA(1, 0.2, 0.2, 1), NUM_POINTS);
+    // peakLine.arrangeX();
 
     // Create PQRST lines
     const pLine = new WebglLine(new ColorRGBA(1, 0.7, 0, 1), NUM_POINTS); // Orange for P
@@ -179,7 +175,7 @@ export default function EcgFullPanel() {
 
     // Add all lines to the plot
     wglp.addLine(line);
-    wglp.addLine(peakLine);
+    // wglp.addLine(peakLine);
     wglp.addLine(pLine);
     wglp.addLine(qLine);
     wglp.addLine(rLine);
@@ -189,7 +185,7 @@ export default function EcgFullPanel() {
     // Store references
     wglpRef.current = wglp;
     lineRef.current = line;
-    peakLineRef.current = peakLine;
+    // peakLineRef.current = peakLine;
     pLineRef.current = pLine;
     qLineRef.current = qLine;
     rLineRef.current = rLine;
@@ -201,7 +197,7 @@ export default function EcgFullPanel() {
       const scale = getScaleFactor();
       for (let i = 0; i < NUM_POINTS; i++) {
         line.setY(i, dataCh0.current[i] * scale);
-        peakLine.setY(i, peaksVisible ? peakData.current[i] : 0);
+        // peakLine.setY(i, peaksVisible ? peakData.current[i] : 0);
 
         // Update PQRST lines if visible
         if (showPQRST) {
@@ -254,6 +250,8 @@ export default function EcgFullPanel() {
       total
     };
   }
+
+  const prevHrvMetrics = useRef<HRVMetrics | null>(null);
 
   function updatePeaks() {
     // Add debug for signal diagnostics
@@ -349,10 +347,36 @@ export default function EcgFullPanel() {
           // If your ECGIntervals type doesn't have st fields, you can modify it or use the separate state
         }
         setEcgIntervals(intervals);
+        return; // <-- Only return if intervals are set
       }
-    } else if (peaks.length > 0) {
-      // If no PQRST but we have peaks, we could create fallback intervals here
-      setSTSegmentData(null);
+    }
+
+    // Fallback: If enough R-peaks, estimate BPM directly
+    if (peaks.length >= 2) {
+      const rrIntervals = [];
+      for (let i = 1; i < peaks.length; i++) {
+        rrIntervals.push((peaks[i] - peaks[i - 1]) / SAMPLE_RATE * 1000);
+      }
+      const avgRR = rrIntervals.reduce((a, b) => a + b, 0) / rrIntervals.length;
+      const bpm = avgRR > 0 ? 60000 / avgRR : 0;
+      setEcgIntervals({
+        rr: avgRR,
+        pr: 0,
+        qrs: 0,
+        qt: 0,
+        qtc: 0,
+        bpm,
+        status: {
+          rr: avgRR < 600 ? 'short' : avgRR > 1000 ? 'long' : 'normal',
+          pr: 'unknown',
+          qrs: 'unknown',
+          qt: 'unknown',
+          qtc: 'unknown',
+          bpm: bpm < 60 ? 'bradycardia' : bpm > 100 ? 'tachycardia' : 'normal'
+        }
+      });
+    } else {
+      setEcgIntervals(null);
     }
   }
 
@@ -445,8 +469,17 @@ export default function EcgFullPanel() {
           for (let i = 0; i < NEW_PACKET_LEN; i += SINGLE_SAMPLE_LEN) {
             const view = new DataView(value.buffer.slice(i, i + SINGLE_SAMPLE_LEN));
             const raw = view.getInt16(1, false);
-            const norm = ((Math.max(0, Math.min(4096, raw)) - 2048) * 2) / 4096;
-            const filtered = ecg.current.process(notch.current.process(norm));
+            const norm = (raw - 2048) / 2048;
+
+            // Apply high-pass, then notch, then bandpass
+            let filtered = highpass.current.process(norm);
+            filtered = notch.current.process(filtered);
+            filtered = ecg.current.process(filtered);
+
+            if (!isFinite(filtered) || isNaN(filtered)) filtered = 0;
+            filtered = Math.max(-1, Math.min(1, filtered));
+
+            // Store and use filtered value
             dataCh0.current[sampleIndex.current] = filtered;
             sampleIndex.current = (sampleIndex.current + 1) % NUM_POINTS;
           }
@@ -555,7 +588,7 @@ export default function EcgFullPanel() {
       if (pqrstPoints.current.length > 0 && showPQRST) {
         setVisiblePQRST([...pqrstPoints.current]);
       }
-    }, 50); // Update at 20fps for smooth movement
+    }, 200); // Update at 5fps for smoother movement
 
     return () => clearInterval(pqrstUpdateInterval);
   }, [showPQRST]);
@@ -891,33 +924,10 @@ export default function EcgFullPanel() {
   // Add this at the beginning of your analyzeSession function
   const analyzeSession = async (session: RecordingSession) => {
     try {
-      // Force re-initialization of the analyzer if the method is missing
-      if (!sessionAnalyzer.current.analyzeFeatures) {
-        console.log("Re-initializing session analyzer...");
-        sessionAnalyzer.current = new SessionAnalyzer(SAMPLE_RATE);
-        await sessionAnalyzer.current.loadModel();
-      }
-
-      // Rest of your function
-      if (session.intervals) {
-        const featureVector = [
-          session.intervals.rr,
-          session.intervals.bpm,
-          session.intervals.pr,
-          session.intervals.qrs,
-          session.intervals.qt || 0,
-          session.intervals.qtc,
-          stSegmentData?.deviation || 0,
-          hrvMetrics?.rmssd || 0,
-          hrvMetrics?.sdnn || 0,
-          hrvMetrics?.lfhf?.ratio || 0,
-        ];
-
-        const results = await sessionAnalyzer.current.analyzeFeatures(featureVector);
-
-        setSessionResults(results);
-        setShowSessionReport(true); // <-- Only after results are set
-      }
+      // Only use the real, data-driven analysis
+      const results = await sessionAnalyzer.current.analyzeSession(session);
+      setSessionResults(results);
+      setShowSessionReport(true);
     } catch (err) {
       console.error('Session analysis failed:', err);
     }
@@ -1400,111 +1410,97 @@ export default function EcgFullPanel() {
               ✕
             </button>
           </div>
-          {(bpmDisplay === "-- BPM" || signalQuality !== "good") ? (
+          {/* Only show summary if batchResult is ready */}
+          {!batchResult ? (
             <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
-              <span className="font-bold text-lg text-yellow-400">Analyzing...</span>
+              <span className="font-bold text-lg text-yellow-400">Collecting beats...</span>
               <p className="text-xs text-gray-400 mt-2">
-                Waiting for correct BPM and good signal quality to run AI analysis.
+                Waiting to collect {BATCH_SIZE} heartbeats for analysis.
               </p>
             </div>
           ) : (
             <>
-              {/* Only show summary if batchResult is ready */}
-              {!batchResult ? (
-                <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
-                  <span className="font-bold text-lg text-yellow-400">Collecting beats...</span>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Waiting to collect {BATCH_SIZE} heartbeats for analysis.
-                  </p>
-                  <p className="text-xs text-gray-400 mt-2">
-                    Collected: {beatPredictions.length} / {BATCH_SIZE}
+              {/* Rolling Summary */}
+              {(() => {
+                const summary = batchResult.summary;
+                if (!summary) return null;
+                const predictionLabels: Record<string, string> = {
+                  "Normal": "Normal beat",
+                  "Supraventricular": "Supraventricular ectopic beat",
+                  "Ventricular": "Ventricular ectopic beat",
+                  "Fusion": "Fusion beat",
+                  "Other": "Other/unknown beat"
+                };
+                return (
+                  <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
+                      <span className="font-bold text-lg" style={{
+                        color:
+                          summary.majorityClass === "Normal" ? "#22c55e" :
+                            summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                      }}>
+                        {predictionLabels[summary.majorityClass] || summary.majorityClass}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
+                      <div
+                        className="h-1.5 rounded-full"
+                        style={{
+                          width: `${summary.majorityPercent}%`,
+                          backgroundColor:
+                            summary.majorityClass === "Normal" ? "#22c55e" :
+                              summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                        }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {summary.majorityPercent.toFixed(1)}% {predictionLabels[summary.majorityClass] || summary.majorityClass} in last {summary.total} beats.
+                    </p>
+                    <ul className="mt-2 text-xs text-gray-300">
+                      {Object.entries(summary.counts).map(([cls, cnt]) => (
+                        <li key={cls}>
+                          {predictionLabels[cls] || cls}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
+                        </li>
+                      ))}
+                    </ul>
+                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
+                      <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                        Warning: Abnormal rhythm detected!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Per-beat prediction (latest beat) */}
+              {modelPrediction && (
+                <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-gray-300">Latest Beat:</span>
+                    <span className="font-bold text-lg" style={{
+                      color:
+                        modelPrediction.prediction === "Normal" ? "#22c55e" :
+                          modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                    }}>
+                      {modelPrediction.prediction}
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-700 rounded-full h-1.5">
+                    <div
+                      className="h-1.5 rounded-full"
+                      style={{
+                        width: `${modelPrediction.confidence}%`,
+                        backgroundColor:
+                          modelPrediction.prediction === "Normal" ? "#22c55e" :
+                            modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                      }}
+                    ></div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Confidence: {modelPrediction.confidence.toFixed(1)}%
                   </p>
                 </div>
-              ) : (
-                <>
-                  {/* Rolling Summary */}
-                  {(() => {
-                    const summary = batchResult.summary;
-                    if (!summary) return null;
-                    const predictionLabels: Record<string, string> = {
-                      "Normal": "Normal beat",
-                      "Supraventricular": "Supraventricular ectopic beat",
-                      "Ventricular": "Ventricular ectopic beat",
-                      "Fusion": "Fusion beat",
-                      "Other": "Other/unknown beat"
-                    };
-                    return (
-                      <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
-                          <span className="font-bold text-lg" style={{
-                            color:
-                              summary.majorityClass === "Normal" ? "#22c55e" :
-                                summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                          }}>
-                            {predictionLabels[summary.majorityClass] || summary.majorityClass}
-                          </span>
-                        </div>
-                        <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
-                          <div
-                            className="h-1.5 rounded-full"
-                            style={{
-                              width: `${summary.majorityPercent}%`,
-                              backgroundColor:
-                                summary.majorityClass === "Normal" ? "#22c55e" :
-                                  summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                            }}
-                          ></div>
-                        </div>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {summary.majorityPercent.toFixed(1)}% {predictionLabels[summary.majorityClass] || summary.majorityClass} in last {summary.total} beats.
-                        </p>
-                        <ul className="mt-2 text-xs text-gray-300">
-                          {Object.entries(summary.counts).map(([cls, cnt]) => (
-                            <li key={cls}>
-                              {predictionLabels[cls] || cls}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
-                            </li>
-                          ))}
-                        </ul>
-                        {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
-                          <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
-                            Warning: Abnormal rhythm detected!
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-
-                  {/* Per-beat prediction (latest beat) */}
-                  {modelPrediction && (
-                    <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-gray-300">Latest Beat:</span>
-                        <span className="font-bold text-lg" style={{
-                          color:
-                            modelPrediction.prediction === "Normal" ? "#22c55e" :
-                              modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-                        }}>
-                          {modelPrediction.prediction}
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-700 rounded-full h-1.5">
-                        <div
-                          className="h-1.5 rounded-full"
-                          style={{
-                            width: `${modelPrediction.confidence}%`,
-                            backgroundColor:
-                              modelPrediction.prediction === "Normal" ? "#22c55e" :
-                                modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-                          }}
-                        ></div>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Confidence: {modelPrediction.confidence.toFixed(1)}%
-                      </p>
-                    </div>
-                  )}
-                </>
               )}
             </>
           )}
@@ -1580,13 +1576,32 @@ export default function EcgFullPanel() {
                   <div className="p-3 rounded-lg border border-white/20 bg-black/40 mb-4">
                     <div className="flex items-center justify-between">
                       <span className="text-gray-300">Heart Rate:</span>
-                      <span className={`font-mono font-bold text-xl ${ecgIntervals.status.bpm === 'normal' ? 'text-green-400' :
-                        ecgIntervals.status.bpm === 'bradycardia' ? 'text-yellow-400' :
-                          ecgIntervals.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
-                        }`}>
-                        {ecgIntervals.bpm > 0 ? ecgIntervals.bpm.toFixed(1) :
-                          (bpmDisplay !== "-- BPM" ? bpmDisplay.split(" ")[0] : "0")} BPM
-                      </span>
+                      <span className={`font-mono font-bold text-xl ${
+  ecgIntervals?.status.bpm === 'normal' ? 'text-green-400' :
+  ecgIntervals?.status.bpm === 'bradycardia' ? 'text-yellow-400' :
+  ecgIntervals?.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
+}`}>
+  {
+    ecgIntervals?.bpm > 0
+      ? ecgIntervals.bpm.toFixed(1)
+      : (() => {
+          // Use your actual R-peak indices array here
+          const rPeaks = pqrstPoints.current.filter(p => p.type === "R").map(p => p.index);
+          if (rPeaks && rPeaks.length >= 2) {
+            const rrIntervals = [];
+            for (let i = 1; i < rPeaks.length; i++) {
+              const rr = (rPeaks[i] - rPeaks[i - 1]) / SAMPLE_RATE * 1000;
+              if (rr >= 300 && rr <= 2000) rrIntervals.push(rr);
+            }
+            const avgRR = rrIntervals.length > 0
+              ? rrIntervals.reduce((a, b) => a + b, 0) / rrIntervals.length
+              : 0;
+            return avgRR > 0 ? (60000 / avgRR).toFixed(1) : "--";
+          }
+          return "--";
+        })()
+  } BPM
+</span>
                     </div>
                     <div className="text-xs text-gray-400 mt-1">
                       How many times your heart beats per minute. Normal is 60-100 BPM.
@@ -1612,7 +1627,7 @@ export default function EcgFullPanel() {
                     </div>
 
                     {/* PR Interval with explanation */}
-                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                                       <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 text-sm">Conduction:</span>
                         <span className={`font-mono ${ecgIntervals.status.pr === 'normal' ? 'text-green-400' :
@@ -1730,44 +1745,54 @@ export default function EcgFullPanel() {
       {/* PQRST text labels overlay - simpler approach */}
       {showPQRST && (
         <div className="absolute inset-0 pointer-events-none">
-          {visiblePQRST.map((point, index) => {
-            // Only show points from the most recent section of the ECG (e.g., last 20% of the screen)xz
-            // This ensures we only label the newest data coming in from the left
-            const isRecent = point.index > (sampleIndex.current - NUM_POINTS * 0.2 + NUM_POINTS) % NUM_POINTS &&
-              point.index < (sampleIndex.current + NUM_POINTS * 0.1) % NUM_POINTS;
+          {(() => {
+            // Define validRPeakIndices as all R points in visiblePQRST
+            const validRPeakIndices = visiblePQRST.filter(p => p.type === "R").map(p => p.index);
+            return visiblePQRST
+              .filter(point => {
+                if (point.type !== "R") return true;
+                // Only show R if its index is in validRPeakIndices
+                return validRPeakIndices.includes(point.index);
+              })
+              .map((point, index) => {
+                // Only show points from the most recent section of the ECG (e.g., last 20% of the screen)xz
+                // This ensures we only label the newest data coming in from the left
+                const isRecent = point.index > (sampleIndex.current - NUM_POINTS * 0.2 + NUM_POINTS) % NUM_POINTS &&
+                  point.index < (sampleIndex.current + NUM_POINTS * 0.1) % NUM_POINTS;
 
-            if (isRecent) {
-              const xPercent = (point.index / NUM_POINTS) * 100;
-              const yOffset = 50 - (point.amplitude * getScaleFactor() * 50);
+                if (isRecent) {
+                  const xPercent = (point.index / NUM_POINTS) * 100;
+                  const yOffset = 50 - (point.amplitude * getScaleFactor() * 50);
 
-              let color;
-              switch (point.type) {
-                case 'P': color = 'text-orange-400'; break;
-                case 'Q': color = 'text-blue-400'; break;
-                case 'R': color = 'text-red-500'; break;
-                case 'S': color = 'text-cyan-400'; break;
-                case 'T': color = 'text-purple-400'; break;
-                default: color = 'text-white';
-                  break;
-              }
+                  let color;
+                  switch (point.type) {
+                    case 'P': color = 'text-orange-400'; break;
+                    case 'Q': color = 'text-blue-400'; break;
+                    case 'R': color = 'text-red-500'; break;
+                    case 'S': color = 'text-cyan-400'; break;
+                    case 'T': color = 'text-purple-400'; break;
+                    default: color = 'text-white';
+                      break;
+                  }
 
-              return (
-                <div
-                  key={`pqrst-${index}`}
-                  className={`absolute font-bold ${color}`}
-                  style={{
-                    left: `${xPercent}%`,
-                    top: `${yOffset}%`,
-                    transform: 'translate(-50%, -50%)',
-                    textShadow: '0 0 4px rgba(0,0,0,0.8)'
-                  }}
-                >
-                  {point.type}
-                </div>
-              );
-            }
-            return null;
-          })}
+                  return (
+                    <div
+                      key={`pqrst-${index}`}
+                      className={`absolute font-bold ${color}`}
+                      style={{
+                        left: `${xPercent}%`,
+                        top: `${yOffset}%`,
+                        transform: 'translate(-50%, -50%)',
+                        textShadow: '0 0 4px rgba(0,0,0,0.8)'
+                      }}
+                    >
+                      {point.type}
+                    </div>
+                  );
+                }
+                return null;
+              });
+          })()}
         </div>
       )}
 

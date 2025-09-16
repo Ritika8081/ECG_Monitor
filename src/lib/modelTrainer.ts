@@ -15,8 +15,32 @@ export function mapAnnotationToAAMI(symbol: string): string | null {
   return null;
 }
 
+// Utility: Resample 1D signal from originalRate to targetRate
+function resampleSignal(signal: number[], originalRate: number, targetRate: number): number[] {
+  const duration = signal.length / originalRate;
+  const targetLength = Math.round(duration * targetRate);
+  const resampled: number[] = [];
+  for (let i = 0; i < targetLength; i++) {
+    const t = i / targetRate;
+    const origIdx = t * originalRate;
+    const idx0 = Math.floor(origIdx);
+    const idx1 = Math.min(idx0 + 1, signal.length - 1);
+    const frac = origIdx - idx0;
+    // Linear interpolation
+    resampled.push(signal[idx0] * (1 - frac) + signal[idx1] * frac);
+  }
+  return resampled;
+}
+
 // --- 2. Load ECG and annotation files, extract beats around R-peaks ---
-export async function loadBeatLevelData(ecgPath: string, annPath: string, beatLength = 187) {
+// Add originalRate and targetRate parameters
+export async function loadBeatLevelData(
+  ecgPath: string,
+  annPath: string,
+  beatLength = 187,
+  originalRate = 360,
+  targetRate = 500
+) {
   // Load ECG CSV (MLII lead)
   const ecgSignal: number[] = await new Promise((resolve, reject) => {
     Papa.parse(ecgPath, {
@@ -31,6 +55,12 @@ export async function loadBeatLevelData(ecgPath: string, annPath: string, beatLe
       error: reject
     });
   });
+
+  // Resample ECG signal if needed
+  let resampledECG = ecgSignal;
+  if (originalRate !== targetRate) {
+    resampledECG = resampleSignal(ecgSignal, originalRate, targetRate);
+  }
 
   // Load annotation CSV (index, annotation_symbol)
   const annotations: { index: number, annotation_symbol: string }[] = await new Promise((resolve, reject) => {
@@ -53,18 +83,25 @@ export async function loadBeatLevelData(ecgPath: string, annPath: string, beatLe
     });
   });
 
+  // Adjust annotation indices for new sampling rate
+  const rateRatio = targetRate / originalRate;
+  const adjustedAnnotations = annotations.map(ann => ({
+    index: Math.round(ann.index * rateRatio),
+    annotation_symbol: ann.annotation_symbol
+  }));
+
   // Extract beats around R-peaks
   const beats: number[][] = [];
   const labels: string[] = [];
   const halfBeat = Math.floor(beatLength / 2);
 
-  annotations.forEach(ann => {
+  adjustedAnnotations.forEach(ann => {
     const mappedClass = mapAnnotationToAAMI(ann.annotation_symbol);
     if (!mappedClass) return;
     const startIdx = ann.index - halfBeat;
     const endIdx = ann.index + halfBeat + 1;
-    if (startIdx >= 0 && endIdx < ecgSignal.length) {
-      const beat = ecgSignal.slice(startIdx, endIdx);
+    if (startIdx >= 0 && endIdx < resampledECG.length) {
+      const beat = resampledECG.slice(startIdx, endIdx);
       if (beat.length === beatLength) {
         // Z-score normalization
         const mean = beat.reduce((a, b) => a + b, 0) / beat.length;

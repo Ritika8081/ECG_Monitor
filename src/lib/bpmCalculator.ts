@@ -1,3 +1,5 @@
+import { PanTompkinsDetector } from "./panTompkinsDetector";
+
 export class BPMCalculator {
   private bpmWindow: number[] = [];
   private bpmSmooth: number | null = null;
@@ -160,7 +162,8 @@ export class BPMCalculator {
    * @returns Smoothed BPM or null
    */
   computeBPM(data: number[]): number | null {
-    const peaks = this.detectPeaks(data);
+    // Use QRS-specific peak detection
+    const peaks = getQRSPeaks(data, this.sampleRate);
     const rawBPM = this.calculateBPMFromPeaks(peaks);
 
     if (rawBPM === null) return null;
@@ -218,4 +221,99 @@ export class BPMCalculator {
       sampleCount: this.bpmWindow.length
     };
   }
+
+  /**
+   * QRS-specific filtering: amplitude and slope
+   */
+  public filterQRS(signal: number[], peakIdx: number, sampleRate: number): boolean {
+    const window = Math.floor(0.04 * sampleRate); // 40 ms before/after (narrower window)
+    const start = Math.max(peakIdx - window, 0);
+    const end = Math.min(peakIdx + window, signal.length - 1);
+    const segment = signal.slice(start, end);
+
+    const amplitude = Math.max(...segment) - Math.min(...segment);
+    let maxSlope = 0;
+    for (let i = 1; i < segment.length; i++) {
+      maxSlope = Math.max(maxSlope, Math.abs(segment[i] - segment[i - 1]));
+    }
+    const qrsWidth = end - start;
+
+    // Stricter criteria
+    return amplitude > 0.6 && maxSlope > 0.4 && qrsWidth < Math.floor(0.12 * sampleRate);
+  }
+}
+
+/**
+ * Peak detection with threshold and refractory period
+ */
+export function detectRPeaks(
+  signal: number[],
+  sampleRate: number,
+  threshold: number = 0.35, // Increased threshold for stability
+  refractoryMs: number = 300
+): number[] {
+  const refractorySamples = Math.floor(refractoryMs * sampleRate / 1000);
+  const peaks: number[] = [];
+  let lastPeak = -refractorySamples;
+
+  for (let i = 1; i < signal.length - 1; i++) {
+    if (
+      signal[i] > threshold &&
+      signal[i] > signal[i - 1] &&
+      signal[i] > signal[i + 1] &&
+      (i - lastPeak) > refractorySamples
+    ) {
+      peaks.push(i);
+      lastPeak = i;
+    }
+  }
+  return peaks;
+}
+
+/**
+ * QRS-specific filtering: amplitude and slope
+ */
+export function filterQRS(signal: number[], peakIdx: number, sampleRate: number): boolean {
+  const window = Math.floor(0.04 * sampleRate); // 40 ms before/after (narrower window)
+  const start = Math.max(peakIdx - window, 0);
+  const end = Math.min(peakIdx + window, signal.length - 1);
+  const segment = signal.slice(start, end);
+
+  const amplitude = Math.max(...segment) - Math.min(...segment);
+  let maxSlope = 0;
+  for (let i = 1; i < segment.length; i++) {
+    maxSlope = Math.max(maxSlope, Math.abs(segment[i] - segment[i - 1]));
+  }
+  const qrsWidth = end - start;
+
+  // Stricter criteria
+  return amplitude > 0.6 && maxSlope > 0.4 && qrsWidth < Math.floor(0.12 * sampleRate);
+}
+
+/**
+ * Usage: filter detected peaks
+ */
+export function getQRSPeaks(signal: number[], sampleRate: number): number[] {
+  const rawPeaks = detectRPeaks(signal, sampleRate, 0.35, 300);
+  return rawPeaks.filter(idx => filterQRS(signal, idx, sampleRate));
+}
+
+/**
+ * Get R-peaks using multiple methods for robustness
+ */
+export function getRPeaks(signal: number[], sampleRate: number): number[] {
+  // 1. Try Pan-Tompkins first
+  const panTompkins = new PanTompkinsDetector(sampleRate);
+  let peaks = panTompkins.detectQRS(signal);
+
+  // 2. If Pan-Tompkins fails (no peaks), fallback to simple detection + QRS filtering
+  if (!peaks || peaks.length === 0) {
+    const rawPeaks = detectRPeaks(signal, sampleRate, 0.25, 300);
+    peaks = rawPeaks.filter(idx => filterQRS(signal, idx, sampleRate));
+  } else {
+    // Also filter Pan-Tompkins peaks by QRS morphology for extra robustness
+    peaks = peaks.filter(idx => filterQRS(signal, idx, sampleRate));
+  }
+
+  return peaks;
 }

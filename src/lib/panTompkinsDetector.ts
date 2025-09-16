@@ -120,14 +120,14 @@ export class PanTompkinsDetector {
     const dataLength = integrated.length;
     
     // Minimum distance between peaks (250ms)
-    const minDistance = Math.round(this.sampleRate * 0.25);
+    const minDistance = Math.round(this.sampleRate * 0.3); // 300ms window
     
     // Init with reasonable threshold
     if (this.peakAmp.length === 0) {
       // Initialize thresholds
       const sortedData = [...integrated].sort((a, b) => b - a);
       const topValue = sortedData[Math.floor(sortedData.length * 0.05)];
-      this.signalThreshold = topValue * 0.5;
+      this.signalThreshold = topValue * 0.6;
       this.noiseThreshold = topValue * 0.2;
     }
     

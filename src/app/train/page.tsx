@@ -14,9 +14,7 @@ export default function TrainPage() {
   const [modelExists, setModelExists] = useState(false);
 
   useEffect(() => {
-
     checkModelExists().then(setModelExists);
-
   }, []);
 
   const handleTrain = async () => {
@@ -38,6 +36,10 @@ export default function TrainPage() {
     }
   };
 
+  // New constants for display
+  const samplingRate = 500;
+  const beatLength = 187; // This is the window length used in modelTrainer.ts
+
   return (
     <div className="w-full h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-auto">
       <NavBar />
@@ -54,7 +56,10 @@ export default function TrainPage() {
                 <p className="text-white mb-4">
                   This panel allows you to train a neural network to classify ECG conditions based on features like heart rate, intervals, and HRV metrics.
                 </p>
-                
+                <div className="mb-4 text-sm text-blue-300">
+                  <p>• <b>Sampling Rate:</b> {samplingRate} Hz (data is resampled from 360 Hz)</p>
+                  <p>• <b>Beat Window Length:</b> {beatLength} samples per beat</p>
+                </div>
                 {modelExists && (
                   <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg mb-4">
                     <div className="flex items-center">
@@ -106,7 +111,7 @@ export default function TrainPage() {
               <div className="mt-6">
                 <h3 className="text-white font-medium mb-2">What happens during training?</h3>
                 <ol className="list-decimal list-inside space-y-2 text-sm text-gray-300">
-                  <li>The model learns from example ECG data</li>
+                  <li>The model learns from example ECG data (resampled to 500 Hz)</li>
                   <li>It trains for up to 40 epochs (iterations)</li>
                   <li>Early stopping prevents overfitting</li>
                   <li>The trained model is saved to your browser storage</li>

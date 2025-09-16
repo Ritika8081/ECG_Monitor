@@ -36,10 +36,10 @@ export default function SessionReport({
     // ...existing feature extraction logic...
   ];
   
-  // Ensure paddedFeatures is a flat array of 720 numbers
-  let paddedFeatures = features.slice(0, 720);
-  if (paddedFeatures.length < 720) {
-    paddedFeatures = paddedFeatures.concat(Array(720 - paddedFeatures.length).fill(0));
+  // Ensure paddedFeatures is a flat array of 187 numbers
+  let paddedFeatures = features.slice(0, 187);
+  if (paddedFeatures.length < 187) {
+    paddedFeatures = paddedFeatures.concat(Array(187 - paddedFeatures.length).fill(0));
   }
   
 
