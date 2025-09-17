@@ -431,7 +431,10 @@ export default function EcgFullPanel() {
         const exists = await checkModelExists();
         if (exists) {
           // CHANGE THIS LINE: use the correct model name
-          const model = await tf.loadLayersModel('/models/beat-level-ecg-model.json');
+         
+const basePath = window.location.pathname.startsWith('/ECG_Monitor') ? '/ECG_Monitor/' : '/';
+const model = await tf.loadLayersModel(`${basePath}models/beat-level-ecg-model.json`);
+
           setEcgModel(model);
           setModelLoaded(true);
           console.log('ECG model loaded successfully');
