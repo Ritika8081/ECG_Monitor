@@ -7,17 +7,48 @@ export async function checkModelExists(): Promise<boolean> {
   return models['localstorage://beat-level-ecg-model'] !== undefined;
 }
 
+// Helper to get the correct model path for static serving (local/dev or GitHub Pages)
+function getModelPath(): string {
+  if (typeof window !== "undefined") {
+    const path = window.location.pathname;
+    // Adjust 'ECG_Monitor' to your actual repo name if different
+    if (path.startsWith('/ECG_Monitor')) {
+      return '/ECG_Monitor/models/beat-level-ecg-model.json';
+    }
+  }
+  // Default for local/dev
+  return 'models/beat-level-ecg-model.json';
+}
+
 // Load model and make a test prediction
 export async function testLoadModel() {
   try {
-    // Check if model exists
-    const exists = await checkModelExists();
-    if (!exists) {
-      throw new Error('No model found in local storage. Please train the model first.');
+    // Try to load from localStorage first, then static path
+    const modelSources = [
+      'localstorage://beat-level-ecg-model',
+      getModelPath(),
+      'models/beat-level-ecg-model.json',
+    ];
+
+    let model: tf.LayersModel | null = null;
+    for (const modelUrl of modelSources) {
+      try {
+        if (modelUrl.startsWith('localstorage://')) {
+          const models = await tf.io.listModels();
+          if (!models[modelUrl]) {
+            continue;
+          }
+        }
+        model = await tf.loadLayersModel(modelUrl);
+        break;
+      } catch {
+        continue;
+      }
     }
 
-    // Load model
-    const model = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
+    if (!model) {
+      throw new Error('No model found in local storage or static assets. Please train or provide the model.');
+    }
 
     // Get input shape from model (should be [null, 187, 1])
     const inputShape = model.inputs[0].shape;

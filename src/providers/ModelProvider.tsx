@@ -18,6 +18,18 @@ type ModelContextType = {
 
 const ModelContext = createContext<ModelContextType | undefined>(undefined);
 
+function getModelPath(): string {
+  if (typeof window !== "undefined") {
+    const path = window.location.pathname;
+    // Adjust 'ECG_Monitor' to your actual repo name if different
+    if (path.startsWith('/ECG_Monitor')) {
+      return '/ECG_Monitor/models/beat-level-ecg-model.json';
+    }
+  }
+  // Default for local/dev
+  return 'models/beat-level-ecg-model.json';
+}
+
 export function ModelProvider({ children }: { children: ReactNode }) {
   const [model, setModel] = useState<tf.LayersModel | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,17 +41,37 @@ export function ModelProvider({ children }: { children: ReactNode }) {
         await tf.ready();
         console.log('TensorFlow.js initialized');
 
-        // Check if model exists in localStorage
-        const models = await tf.io.listModels();
-        if (!models['localstorage://beat-level-ecg-model']) {
-          setError('No model found in browser storage. Please train the model first.');
+        // Try localStorage first, then static path
+        const modelSources = [
+          'localstorage://beat-level-ecg-model',
+          getModelPath(),
+          'models/beat-level-ecg-model.json',
+        ];
+
+        let loadedModel: tf.LayersModel | null = null;
+        for (const modelUrl of modelSources) {
+          try {
+            if (modelUrl.startsWith('localstorage://')) {
+              const models = await tf.io.listModels();
+              if (!models[modelUrl]) {
+                continue;
+              }
+            }
+            loadedModel = await tf.loadLayersModel(modelUrl);
+            console.log(`Model loaded successfully from: ${modelUrl}`);
+            break;
+          } catch (err) {
+            console.log(`Failed to load model from ${modelUrl}:`, err);
+            continue;
+          }
+        }
+
+        if (!loadedModel) {
+          setError('No model found in browser storage or static assets. Please train or provide the model.');
           setIsLoading(false);
           return;
         }
 
-        // Load the model
-        const loadedModel = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
-        console.log('Model loaded successfully');
         setModel(loadedModel);
         setIsLoading(false);
       } catch (err) {

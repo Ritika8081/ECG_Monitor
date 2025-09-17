@@ -6,6 +6,18 @@ import { zscoreNorm, classLabels } from '../lib/modelTrainer';
 
 const INPUT_LENGTH = 187; // Match your model's input shape
 
+function getModelPath(): string {
+  if (typeof window !== "undefined") {
+    const path = window.location.pathname;
+    // Adjust 'ECG_Monitor' to your actual repo name if different
+    if (path.startsWith('/ECG_Monitor')) {
+      return '/ECG_Monitor/models/beat-level-ecg-model.json';
+    }
+  }
+  // Default for local/dev
+  return 'models/beat-level-ecg-model.json';
+}
+
 export default function ModelInspector() {
   const [model, setModel] = useState<tf.LayersModel | null>(null);
   const [loading, setLoading] = useState(true);
@@ -21,13 +33,35 @@ export default function ModelInspector() {
     async function loadModel() {
       setLoading(true);
       try {
-        const models = await tf.io.listModels();
-        if (!models['localstorage://beat-level-ecg-model']) {
-          setError('No model found in local storage. Please train the model first.');
+        // Try localstorage first, then static path
+        const modelSources = [
+          'localstorage://beat-level-ecg-model',
+          getModelPath(),
+          'models/beat-level-ecg-model.json',
+        ];
+
+        let loadedModel: tf.LayersModel | null = null;
+        for (const modelUrl of modelSources) {
+          try {
+            if (modelUrl.startsWith('localstorage://')) {
+              const models = await tf.io.listModels();
+              if (!models[modelUrl]) {
+                continue;
+              }
+            }
+            loadedModel = await tf.loadLayersModel(modelUrl);
+            break;
+          } catch {
+            continue;
+          }
+        }
+
+        if (!loadedModel) {
+          setError('No model found in local storage or static assets. Please train or provide the model.');
           setLoading(false);
           return;
         }
-        const loadedModel = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
+
         setModel(loadedModel);
 
         // Extract model info

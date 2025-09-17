@@ -160,8 +160,8 @@ export default function SessionRecording({
                 <button
                   onClick={() => setPatientInfo({ ...patientInfo, gender: 'male' })}
                   className={`flex-1 py-2 rounded-lg text-sm ${patientInfo.gender === 'male'
-                      ? 'bg-blue-500/30 border border-blue-500/60 text-blue-400'
-                      : 'bg-gray-800/50 border border-gray-700 text-gray-400'
+                    ? 'bg-blue-500/30 border border-blue-500/60 text-blue-400'
+                    : 'bg-gray-800/50 border border-gray-700 text-gray-400'
                     }`}
                 >
                   Male
@@ -169,8 +169,8 @@ export default function SessionRecording({
                 <button
                   onClick={() => setPatientInfo({ ...patientInfo, gender: 'female' })}
                   className={`flex-1 py-2 rounded-lg text-sm ${patientInfo.gender === 'female'
-                      ? 'bg-pink-500/30 border border-pink-500/60 text-pink-400'
-                      : 'bg-gray-800/50 border border-gray-700 text-gray-400'
+                    ? 'bg-pink-500/30 border border-pink-500/60 text-pink-400'
+                    : 'bg-gray-800/50 border border-gray-700 text-gray-400'
                     }`}
                 >
                   Female
@@ -207,8 +207,8 @@ export default function SessionRecording({
                   key={option}
                   onClick={() => toggleHistory(option)}
                   className={`text-xs rounded-full px-3 py-1 border ${patientInfo.medicalHistory.includes(option)
-                      ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
-                      : 'bg-gray-800 border-gray-700 text-gray-400'
+                    ? 'bg-blue-500/20 border-blue-500/50 text-blue-400'
+                    : 'bg-gray-800 border-gray-700 text-gray-400'
                     }`}
                 >
                   {option}
@@ -225,8 +225,8 @@ export default function SessionRecording({
                   key={option}
                   onClick={() => toggleMedication(option)}
                   className={`text-xs rounded-full px-3 py-1 border ${patientInfo.medications.includes(option)
-                      ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
-                      : 'bg-gray-800 border-gray-700 text-gray-400'
+                    ? 'bg-purple-500/20 border-purple-500/50 text-purple-400'
+                    : 'bg-gray-800 border-gray-700 text-gray-400'
                     }`}
                 >
                   {option}
