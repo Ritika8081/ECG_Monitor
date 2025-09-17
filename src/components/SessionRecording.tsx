@@ -66,7 +66,7 @@ export default function SessionRecording({
     medications: []
   });
   const [showSessionReport, setShowSessionReport] = useState(false);
-  const [sessionResults, setSessionResults] = useState<any>(null);
+  
   
   // Medical history options
   const historyOptions = [

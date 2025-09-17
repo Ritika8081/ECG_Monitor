@@ -8,6 +8,8 @@ import * as tf from '@tensorflow/tfjs';
 export type SessionAnalysisResults = {
   summary: {
     recordingDuration: string;
+    recordingDurationSeconds?: number; // <-- Add this
+    rPeaks?: number[];                // <-- Add this
     heartRate: {
       average: number;
       min: number;
@@ -206,6 +208,8 @@ export class SessionAnalyzer {
     return {
       summary: {
         recordingDuration: this.formatDuration(duration),
+        recordingDurationSeconds: duration, // <-- Add this
+        rPeaks: peaks,                     // <-- Add this
         heartRate: {
           average: heartRates.average,
           min: heartRates.min,

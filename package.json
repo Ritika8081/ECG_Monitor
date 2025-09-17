@@ -16,6 +16,7 @@
     "papaparse": "^5.5.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-tooltip": "^5.29.1",
     "webgl-plot": "^0.7.2"
   },
   "devDependencies": {

@@ -15,6 +15,14 @@ const predictionLabels: Record<string, string> = {
   "Other": "Other/unknown beat"
 };
 
+const predictionExplanations: Record<string, string> = {
+  "Normal": "Your heart's electrical activity appears normal.",
+  "Supraventricular": "Beat originating above the ventricles (possible PAC or supraventricular arrhythmia).",
+  "Ventricular": "Beat originating in the ventricles (possible PVC or ventricular arrhythmia).",
+  "Fusion": "Fusion of normal and abnormal beat.",
+  "Other": "Beat could not be classified into standard categories."
+};
+
 export interface SessionReportProps {
   analysisResults: SessionAnalysisResults;
   patientInfo: PatientInfo;
@@ -42,6 +50,25 @@ export default function SessionReport({
     paddedFeatures = paddedFeatures.concat(Array(187 - paddedFeatures.length).fill(0));
   }
   
+  // Parse duration string to seconds
+  function parseDuration(duration: string): number {
+    const parts = duration.split(":").map(Number);
+    if (parts.length === 3) {
+      // hh:mm:ss
+      return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+      // mm:ss
+      return parts[0] * 60 + parts[1];
+    }
+    return 0;
+  }
+
+  // Example: get rPeaks from analysisResults or from session if available
+  const rPeaks = analysisResults.summary.rPeaks ?? [];
+  const numBeats = rPeaks.length;
+  const durationSeconds = parseDuration(analysisResults.summary.recordingDuration);
+  const durationMinutes = durationSeconds / 60;
+  const sessionAverageBpm = durationMinutes > 0 ? numBeats / durationMinutes : 0;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8 w-full">
@@ -184,9 +211,9 @@ export default function SessionReport({
                     </h3>
                     <div className="flex justify-between items-center mb-1">
                       <span className="text-gray-300 text-xs">Classification:</span>
-                      <span className="font-bold text-sm" style={{ 
-                        color: analysisResults.aiClassification.prediction === "Normal" 
-                          ? "#22c55e" : "#f59e0b" 
+                      <span className="font-bold text-sm" style={{
+                        color: analysisResults.aiClassification.prediction === "Normal"
+                          ? "#22c55e" : "#f59e0b"
                       }}>
                         {predictionLabels[analysisResults.aiClassification.prediction] || analysisResults.aiClassification.prediction}
                       </span>
@@ -196,13 +223,13 @@ export default function SessionReport({
                         className="h-1 rounded-full" 
                         style={{ 
                           width: `${analysisResults.aiClassification.confidence}%`,
-                          backgroundColor: analysisResults.aiClassification.prediction === "Normal" 
+                          backgroundColor: analysisResults.aiClassification.prediction === "Normal"
                             ? "#22c55e" : "#f59e0b"
                         }}
                       ></div>
                     </div>
                     <p className="text-xs text-gray-300 mt-1">
-                      {analysisResults.aiClassification.explanation}
+                      {predictionExplanations[analysisResults.aiClassification.prediction] || ""}
                     </p>
                   </div>
                   <div>
