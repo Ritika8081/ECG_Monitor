@@ -232,7 +232,7 @@ export async function trainBeatLevelECGModel(ecgPath: string, annPath: string, o
     }
   });
 
-  await model.save('localstorage://beat-level-ecg-model');
+  await model.save('downloads://beat-level-ecg-model');
   X.dispose(); y.dispose(); xTrain.dispose(); yTrain.dispose(); xVal.dispose(); yVal.dispose(); xTest.dispose(); yTest.dispose();
   return model;
 }
@@ -302,29 +302,41 @@ export const allFilePairs = [
 ];
 
 // --- Train using all file pairs ---
-export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, logs: tf.Logs) => void) {
+export async function trainBeatLevelECGModelAllFiles(
+  onEpoch?: (epoch: number, logs: tf.Logs) => void,
+  onLog?: (msg: string) => void
+) {
   let allBeats: number[][] = [];
   let allLabels: string[] = [];
 
-  console.log("Loading all file pairs...");
+  const log = (msg: string) => {
+    if (onLog) onLog(msg);
+    console.log(msg);
+  };
+  const warn = (msg: string, err?: any) => {
+    if (onLog) onLog(`${msg} ${err ? String(err) : ""}`);
+    console.warn(msg, err);
+  };
+
+  log("Loading all file pairs...");
   for (const pair of allFilePairs) {
     try {
       const { beats, labels } = await loadBeatLevelData(pair.ecg, pair.ann, 187);
-      console.log(`Loaded ${pair.ecg}: ${beats.length} beats`);
+      log(`Loaded ${pair.ecg}: ${beats.length} beats`);
       allBeats.push(...beats);
       allLabels.push(...labels);
     } catch (err) {
-      console.warn(`Failed to load ${pair.ecg} or ${pair.ann}:`, err);
+      warn(`Failed to load ${pair.ecg} or ${pair.ann}:`, err);
     }
   }
 
-  console.log(`Total beats loaded: ${allBeats.length}`);
+  log(`Total beats loaded: ${allBeats.length}`);
   if (allBeats.length === 0) {
     throw new Error("No beats loaded. Check your data files and paths.");
   }
 
   const { beats: balancedBeats, labels: balancedLabels, classes } = prepareBalancedBeatDataset(allBeats, allLabels);
-  console.log(`Balanced dataset: ${balancedBeats.length} beats, classes: ${classes.join(", ")}`);
+  log(`Balanced dataset: ${balancedBeats.length} beats, classes: ${classes.join(", ")}`);
 
   const { X, y } = beatsToTensors(balancedBeats, balancedLabels, classes);
 
@@ -332,7 +344,7 @@ export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, l
   const totalSamples = balancedBeats.length;
   const trainSize = Math.floor(totalSamples * 0.7);
   const valSize = Math.floor(totalSamples * 0.15);
-  console.log(`Splitting data: train=${trainSize}, val=${valSize}, test=${totalSamples - trainSize - valSize}`);
+  log(`Splitting data: train=${trainSize}, val=${valSize}, test=${totalSamples - trainSize - valSize}`);
 
   const [xTrain, xRest] = tf.split(X, [trainSize, totalSamples - trainSize]);
   const [yTrain, yRest] = tf.split(y, [trainSize, totalSamples - trainSize]);
@@ -343,7 +355,7 @@ export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, l
 
   let bestValAcc = 0;
 
-  console.log("Starting model.fit...");
+  log("Starting model.fit...");
   await model.fit(xTrain, yTrain, {
     epochs: 10,
     batchSize: 32,
@@ -357,16 +369,14 @@ export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, l
         const valLoss = logs?.val_loss?.toFixed(4);
         bestValAcc = Math.max(bestValAcc, valAcc);
 
-        console.log(
-          `Epoch ${epoch + 1}/50 | Train Acc: ${trainAcc.toFixed(2)}% | Val Acc: ${valAcc.toFixed(2)}% | Train Loss: ${trainLoss} | Val Loss: ${valLoss}`
-        );
-
+        const msg = `Epoch ${epoch + 1}/10 | Train Acc: ${trainAcc.toFixed(2)}% | Val Acc: ${valAcc.toFixed(2)}% | Train Loss: ${trainLoss} | Val Loss: ${valLoss}`;
+        if (onLog) onLog(msg);
         if (onEpoch) onEpoch(epoch, logs ?? {} as tf.Logs);
       }
     }
   });
 
-  console.log("Evaluating on test set...");
+  log("Evaluating on test set...");
   // Evaluate on test set
   const evalResult = await model.evaluate(xTest, yTest);
   let testAcc = 0;
@@ -376,11 +386,11 @@ export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, l
     testAcc = (await evalResult.data())[0] * 100;
   }
 
-  console.log(`Test Accuracy: ${testAcc.toFixed(2)}%`);
-  console.log(`Best Validation Accuracy: ${bestValAcc.toFixed(2)}%`);
+  log(`Test Accuracy: ${testAcc.toFixed(2)}%`);
+  log(`Best Validation Accuracy: ${bestValAcc.toFixed(2)}%`);
 
   // Print detected classes
-  console.log("Detected Classes:", classes);
+  log("Detected Classes: " + classes.join(", "));
 
   // Per-class metrics
   const predictions = model.predict(xTest) as tf.Tensor;
@@ -396,13 +406,14 @@ export async function trainBeatLevelECGModelAllFiles(onEpoch?: (epoch: number, l
     const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
     const f1Score = precision + recall > 0 ? 2 * (precision * recall) / (precision + recall) : 0;
 
-    console.log(
+    log(
       `${className}: Precision=${(precision * 100).toFixed(1)}%, Recall=${(recall * 100).toFixed(1)}%, F1=${(f1Score * 100).toFixed(1)}%`
     );
   });
 
-  await model.save('localstorage://beat-level-ecg-model');
+  await model.save('downloads://beat-level-ecg-model');
   X.dispose(); y.dispose(); xTrain.dispose(); yTrain.dispose(); xVal.dispose(); yVal.dispose(); xTest.dispose(); yTest.dispose();
   predictions.dispose();
   return model;
 }
+

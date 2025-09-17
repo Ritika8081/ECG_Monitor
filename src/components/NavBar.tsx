@@ -29,19 +29,6 @@ export default function NavBar() {
               Monitor
             </Link>
             
-            <Link
-              href="/analysis"
-              className={`px-4 py-2 rounded-lg transition-colors ${
-                pathname === '/analysis' 
-                  ? 'bg-blue-500/20 text-blue-400' 
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <Heart className="w-4 h-4" />
-                Analysis
-              </span>
-            </Link>
             
             <Link
               href="/train"

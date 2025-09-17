@@ -8,8 +8,8 @@ import * as tf from '@tensorflow/tfjs';
 export type SessionAnalysisResults = {
   summary: {
     recordingDuration: string;
-    recordingDurationSeconds?: number; // <-- Add this
-    rPeaks?: number[];                // <-- Add this
+    recordingDurationSeconds?: number; 
+    rPeaks?: number[];         
     heartRate: {
       average: number;
       min: number;
@@ -451,18 +451,16 @@ export class SessionAnalyzer {
       return { average: 0, min: 0, max: 0 };
     }
 
-    console.log("Detected R-peaks:", peaks.length, peaks);
-
     const rrIntervals = [];
     for (let i = 1; i < peaks.length; i++) {
       const rr = (peaks[i] - peaks[i-1]) * (1000 / sampleRate);
       rrIntervals.push(rr);
     }
-    console.log("RR intervals (ms):", rrIntervals);
+    
 
     // Filter RR intervals to physiological range (300ms to 2000ms)
     const filteredRRs = rrIntervals.filter(rr => rr >= 300 && rr <= 2000);
-    console.log("Filtered RR intervals (ms):", filteredRRs);
+   
 
     if (filteredRRs.length === 0) {
       console.warn("No valid RR intervals after filtering.");

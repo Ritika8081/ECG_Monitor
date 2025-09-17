@@ -8,15 +8,13 @@ import { HRVCalculator } from '../lib/hrvCalculator';
 import { PQRSTDetector, PQRSTPoint } from '../lib/pqrstDetector';
 import { PanTompkinsDetector } from '../lib/panTompkinsDetector';
 import { ECGIntervalCalculator, ECGIntervals } from '../lib/ecgIntervals';
-import * as tf from '@tensorflow/tfjs';
+import * as tf from "@tensorflow/tfjs";
 import { checkModelExists } from '../lib/modelTester';
 import { zscoreNorm } from "../lib/modelTrainer";
 import SessionRecording, { PatientInfo, RecordingSession } from './SessionRecording';
 import { SessionAnalyzer, SessionAnalysisResults } from '../lib/sessionAnalyzer';
 import SessionReport from './SessionReport';
-import { AAMI_CLASSES } from "../lib/modelTrainer"; 
-import { Tooltip } from "react-tooltip";
-import "react-tooltip/dist/react-tooltip.css";
+import { AAMI_CLASSES } from "../lib/modelTrainer"; // <-- Import your model classes
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
@@ -140,7 +138,7 @@ export default function EcgFullPanel() {
     summary: ReturnType<typeof getRollingSummary> | null,
     latest: { prediction: string, confidence: number } | null
   } | null>(null);
-
+  
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -433,7 +431,7 @@ export default function EcgFullPanel() {
         const exists = await checkModelExists();
         if (exists) {
           // CHANGE THIS LINE: use the correct model name
-          const model = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
+          const model = await tf.loadLayersModel('/models/beat-level-ecg-model.json');
           setEcgModel(model);
           setModelLoaded(true);
           console.log('ECG model loaded successfully');
@@ -574,6 +572,11 @@ export default function EcgFullPanel() {
       console.error('Prediction failed:', err);
       setModelPrediction({ prediction: "Analyzing", confidence: 0 });
     }
+  };
+
+  const getBPMStats = () => {
+    console.log('BPM Stats:', bpmCalculator.current.getStats());
+    console.log('HRV Metrics:', hrvCalculator.current.getAllMetrics());
   };
 
   // Add this to keep PQRST labels moving with the wave
@@ -991,6 +994,34 @@ export default function EcgFullPanel() {
   // Patient Info modal state
   const [showPatientInfo, setShowPatientInfo] = useState(false);
 
+  const predictionDetails: Record<string, { label: string, description: string, symbols: string[] }> = {
+    "Normal": {
+      label: "Normal beat",
+      description: "A typical heartbeat with no detected abnormalities.",
+      symbols: ['N', '.', 'L', 'R', 'e', 'j']
+    },
+    "Supraventricular": {
+      label: "Supraventricular ectopic beat",
+      description: "A heartbeat originating above the ventricles (e.g., atria).",
+      symbols: ['A', 'a', 'J', 'S']
+    },
+    "Ventricular": {
+      label: "Ventricular ectopic beat",
+      description: "A heartbeat originating in the ventricles (lower chambers).",
+      symbols: ['V', 'E', 'r']
+    },
+    "Fusion": {
+      label: "Fusion beat",
+      description: "A beat formed by the combination of normal and abnormal impulses.",
+      symbols: ['F']
+    },
+    "Other": {
+      label: "Other/unknown beat",
+      description: "A beat that does not fit standard categories or is unclassified.",
+      symbols: ['Q', '/', 'f', 'n', 'unknown']
+    }
+  };
+
   return (
     <div className="relative w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 ">
       {/* Patient Info Modal (overlay, not in sidebar) */}
@@ -1199,6 +1230,28 @@ export default function EcgFullPanel() {
             </div>
           </div>
 
+          {/* Export Report Button */}
+          <div className="relative w-full mb-5">
+            <div className="flex">
+              <div className="w-16 flex justify-center">
+                <button
+                  onClick={!ecgIntervals ? undefined : generateSummaryReport}
+                  className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${!ecgIntervals
+                    ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
+                    : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
+                    }`}
+                  title="Export Report"
+                >
+                  <BarChart3 className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
+                <span className={`text-sm font-medium ${!ecgIntervals ? 'text-gray-400' : 'text-green-400'}`}>
+                  Export Report
+                </span>
+              </div>
+            </div>
+          </div>
 
           {/* AI Analysis Button */}
           <div className="relative w-full mb-5">
@@ -1235,7 +1288,7 @@ export default function EcgFullPanel() {
 
       {/* HRV Panel */}
       {showHRV && (
-        <div className="absolute left-23 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white">
+        <div className="absolute left-20 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-blue-400" />
@@ -1251,7 +1304,7 @@ export default function EcgFullPanel() {
 
           {hrvMetrics && hrvMetrics.sampleCount > 0 ? (
             <>
-              {/* Physiological State */}
+              {/* Physiological State (previously Mental State) */}
               <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm text-gray-300">Physiological State:</span>
@@ -1304,43 +1357,19 @@ export default function EcgFullPanel() {
               {/* Time Domain Metrics */}
               <div className="space-y-3">
                 <div className="flex justify-between">
-                  <span
-                    className="text-gray-300 cursor-pointer"
-                    data-tooltip-id="hrv-tooltips"
-                    data-tooltip-content="Root Mean Square of Successive Differences: reflects short-term HRV, sensitive to parasympathetic activity."
-                  >
-                    RMSSD:
-                  </span>
+                  <span className="text-gray-300">RMSSD:</span>
                   <span className="font-mono text-green-400">{hrvMetrics.rmssd.toFixed(1)} ms</span>
                 </div>
                 <div className="flex justify-between">
-                  <span
-                    className="text-gray-300 cursor-pointer"
-                    data-tooltip-id="hrv-tooltips"
-                    data-tooltip-content="Standard Deviation of NN intervals: reflects overall HRV, both sympathetic and parasympathetic."
-                  >
-                    SDNN:
-                  </span>
+                  <span className="text-gray-300">SDNN:</span>
                   <span className="font-mono text-blue-400">{hrvMetrics.sdnn.toFixed(1)} ms</span>
                 </div>
                 <div className="flex justify-between">
-                  <span
-                    className="text-gray-300 cursor-pointer"
-                    data-tooltip-id="hrv-tooltips"
-                    data-tooltip-content="Percentage of NN intervals differing by >50ms: higher values indicate more variability."
-                  >
-                    pNN50:
-                  </span>
+                  <span className="text-gray-300">pNN50:</span>
                   <span className="font-mono text-yellow-400">{hrvMetrics.pnn50.toFixed(1)}%</span>
                 </div>
-                <div className="flex justify-between" >
-                  <span
-                    className="text-gray-300 cursor-pointer"
-                    data-tooltip-id="hrv-tooltips"
-                    data-tooltip-content="HRV Triangular Index: geometric measure of overall HRV."
-                  >
-                    Triangular:
-                  </span>
+                <div className="flex justify-between">
+                  <span className="text-gray-300">Triangular:</span>
                   <span className="font-mono text-purple-400">{hrvMetrics.triangularIndex.toFixed(1)}</span>
                 </div>
               </div>
@@ -1350,37 +1379,19 @@ export default function EcgFullPanel() {
                 <h4 className="text-sm font-medium text-gray-300 mb-2">Frequency Domain</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between">
-                    <span
-                      className="text-gray-400 text-sm cursor-pointer"
-                      data-tooltip-id="hrv-tooltips"
-                      data-tooltip-content="LF Power: Low Frequency Power (0.04–0.15 Hz), reflects both sympathetic and parasympathetic activity."
-                    >
-                      LF Power:
-                    </span>
+                    <span className="text-gray-400 text-sm">LF Power:</span>
                     <span className="font-mono text-blue-400 text-sm">
                       {hrvMetrics.lfhf.lf.toFixed(2)} ms²
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span
-                      className="text-gray-400 text-sm cursor-pointer"
-                      data-tooltip-id="hrv-tooltips"
-                      data-tooltip-content="HF Power: High Frequency Power (0.15–0.4 Hz), reflects parasympathetic (vagal) activity."
-                    >
-                      HF Power:
-                    </span>
+                    <span className="text-gray-400 text-sm">HF Power:</span>
                     <span className="font-mono text-green-400 text-sm">
                       {hrvMetrics.lfhf.hf.toFixed(2)} ms²
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span
-                      className="text-gray-400 text-sm cursor-pointer"
-                      data-tooltip-id="hrv-tooltips"
-                      data-tooltip-content="LF/HF Ratio: Balance between sympathetic and parasympathetic activity."
-                    >
-                      LF/HF Ratio:
-                    </span>
+                    <span className="text-gray-400 text-sm">LF/HF Ratio:</span>
                     <span className="font-mono text-orange-400 text-sm">
                       {hrvMetrics.lfhf.ratio.toFixed(2)}
                       <span className="text-xs ml-1 text-gray-400">
@@ -1396,13 +1407,6 @@ export default function EcgFullPanel() {
               <div className="mt-4 pt-4 border-t border-white/20 text-xs text-gray-400">
                 Samples: {hrvMetrics.sampleCount} RR intervals
               </div>
-              {/* Tooltip for all HRV metrics */}
-              <Tooltip
-                id="hrv-tooltips"
-                place="top"
-                className="!bg-black !border !border-white/20 !rounded-xl !p-3 ml-14 !text-white !shadow-lg !text-xs"
-                style={{ zIndex: 9999, maxWidth: 260 }}
-              />
             </>
           ) : (
             <div className="text-center text-gray-400 py-8">
@@ -1434,94 +1438,113 @@ export default function EcgFullPanel() {
               ✕
             </button>
           </div>
-
-          {/* Show collecting message if not enough beats for summary */}
-          {(!batchResult || !batchResult.summary || batchResult.summary.total < 5) && (
-            <div className="mb-4 p-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 text-center font-semibold">
-              <div className="text-lg mb-1">Collecting heartbeats...</div>
-              <div className="text-sm">
-                Waiting for enough beats to analyze.<br />
-                Please keep still and ensure good electrode contact.
-              </div>
+          {/* Only show summary if batchResult is ready */}
+          {!batchResult ? (
+            <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
+              <span className="font-bold text-lg text-yellow-400">Collecting beats...</span>
+              <p className="text-xs text-gray-400 mt-2">
+                Waiting to collect {BATCH_SIZE} heartbeats for analysis.
+              </p>
             </div>
+          ) : (
+            <>
+              {/* Rolling Summary */}
+              {(() => {
+                const summary = batchResult.summary;
+                if (!summary) return null;
+                const details = predictionDetails[summary.majorityClass] || predictionDetails["Other"];
+                return (
+                  <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
+                      <span className="font-bold text-lg" style={{
+                        color:
+                          summary.majorityClass === "Normal" ? "#22c55e" :
+                            summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                      }}>
+                        {details.label}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400 mb-1">
+                      {details.description}
+                    </div>
+                    <div className="text-xs text-gray-500 mb-2">
+                      Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
+                      <div
+                        className="h-1.5 rounded-full"
+                        style={{
+                          width: `${summary.majorityPercent}%`,
+                          backgroundColor:
+                            summary.majorityClass === "Normal" ? "#22c55e" :
+                              summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                        }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {summary.majorityPercent.toFixed(1)}% {details.label} in last {summary.total} beats.
+                    </p>
+                    <ul className="mt-2 text-xs text-gray-300">
+                      {Object.entries(summary.counts).map(([cls, cnt]) => {
+                        const d = predictionDetails[cls] || predictionDetails["Other"];
+                        return (
+                          <li key={cls}>
+                            {d.label}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
+                            <span className="text-gray-500 ml-2">[{d.symbols.join(", ")}]</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
+                      <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                        Warning: Abnormal rhythm detected!
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Per-beat prediction (latest beat) */}
+              {modelPrediction && (() => {
+                const details = predictionDetails[modelPrediction.prediction] || predictionDetails["Other"];
+                return (
+                  <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-300">Latest Beat:</span>
+                      <span className="font-bold text-lg" style={{
+                        color:
+                          modelPrediction.prediction === "Normal" ? "#22c55e" :
+                            modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                      }}>
+                        {details.label}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-400 mb-1">
+                      {details.description}
+                    </div>
+                    <div className="text-xs text-gray-500 mb-2">
+                      Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5">
+                      <div
+                        className="h-1.5 rounded-full"
+                        style={{
+                          width: `${modelPrediction.confidence}%`,
+                          backgroundColor:
+                            modelPrediction.prediction === "Normal" ? "#22c55e" :
+                              modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
+                        }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Confidence: {modelPrediction.confidence.toFixed(1)}%
+                    </p>
+                  </div>
+                );
+              })()}
+            </>
           )}
-
-          {/* Rolling Summary */}
-          {batchResult && batchResult.summary && batchResult.summary.total >= 5 && (() => {
-            const summary = batchResult.summary;
-            const predictionLabels: Record<string, string> = {
-              "Normal": "Normal beat",
-              "Supraventricular": "Supraventricular ectopic beat",
-              "Ventricular": "Ventricular ectopic beat",
-              "Fusion": "Fusion beat",
-              "Other": "Other/unknown beat",
-              "Other/unknown": "Other/unknown beat"
-            };
-
-            // Show warning and return early if majority is "Other" or "Other/unknown"
-            if (
-              summary.majorityClass === "Other/unknown beat" ||
-              summary.majorityClass === "Other" ||
-              (summary.counts["Other/unknown beat"] && (summary.counts["Other/unknown beat"] / summary.total) > 0.5) ||
-              (summary.counts["Other"] && (summary.counts["Other"] / summary.total) > 0.5)
-            ) {
-              return (
-                <div className="mb-4 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-center font-semibold">
-                  <div className="text-lg mb-1">⚠️ Poor Signal or Unclassified Beats</div>
-                  <div className="text-sm mb-2">
-                    Most recent heartbeats could not be classified.<br />
-                    Please check electrode contact, reduce movement, and ensure good skin contact.
-                  </div>
-                  <div className="text-xs text-gray-400">
-                    Reliable rolling analysis is not possible until signal quality improves.
-                  </div>
-                </div>
-              );
-            }
-
-            // Otherwise, show the normal rolling summary
-            return (
-              <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
-                  <span className="font-bold text-lg" style={{
-                    color:
-                      summary.majorityClass === "Normal" ? "#22c55e" :
-                        summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                  }}>
-                    {predictionLabels[summary.majorityClass] || summary.majorityClass}
-                  </span>
-                </div>
-                <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
-                  <div
-                    className="h-1.5 rounded-full"
-                    style={{
-                      width: `${summary.majorityPercent}%`,
-                      backgroundColor:
-                        summary.majorityClass === "Normal" ? "#22c55e" :
-                          summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                    }}
-                  ></div>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">
-                  {summary.majorityPercent.toFixed(1)}% {predictionLabels[summary.majorityClass] || summary.majorityClass} in last {summary.total} beats.
-                </p>
-                <ul className="mt-2 text-xs text-gray-300">
-                  {Object.entries(summary.counts).map(([cls, cnt]) => (
-                    <li key={cls}>
-                      {predictionLabels[cls] || cls}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
-                    </li>
-                  ))}
-                </ul>
-                {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
-                  <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
-                    Warning: Abnormal rhythm detected!
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
           <div className="mt-4 text-xs text-gray-500 italic">
             This is not a diagnostic tool. Results should be confirmed by medical professionals.
           </div>
@@ -1594,31 +1617,32 @@ export default function EcgFullPanel() {
                   <div className="p-3 rounded-lg border border-white/20 bg-black/40 mb-4">
                     <div className="flex items-center justify-between">
                       <span className="text-gray-300">Heart Rate:</span>
-                      <span className={`font-mono font-bold text-xl ${ecgIntervals?.status.bpm === 'normal' ? 'text-green-400' :
-                        ecgIntervals?.status.bpm === 'bradycardia' ? 'text-yellow-400' :
-                          ecgIntervals?.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
-                        }`}>
-                        {
-                          ecgIntervals?.bpm > 0
-                            ? ecgIntervals.bpm.toFixed(1)
-                            : (() => {
-                              // Use your actual R-peak indices array here
-                              const rPeaks = pqrstPoints.current.filter(p => p.type === "R").map(p => p.index);
-                              if (rPeaks && rPeaks.length >= 2) {
-                                const rrIntervals = [];
-                                for (let i = 1; i < rPeaks.length; i++) {
-                                  const rr = (rPeaks[i] - rPeaks[i - 1]) / SAMPLE_RATE * 1000;
-                                  if (rr >= 300 && rr <= 2000) rrIntervals.push(rr);
-                                }
-                                const avgRR = rrIntervals.length > 0
-                                  ? rrIntervals.reduce((a, b) => a + b, 0) / rrIntervals.length
-                                  : 0;
-                                return avgRR > 0 ? (60000 / avgRR).toFixed(1) : "--";
-                              }
-                              return "--";
-                            })()
-                        } BPM
-                      </span>
+                      <span className={`font-mono font-bold text-xl ${
+  ecgIntervals?.status.bpm === 'normal' ? 'text-green-400' :
+  ecgIntervals?.status.bpm === 'bradycardia' ? 'text-yellow-400' :
+  ecgIntervals?.status.bpm === 'tachycardia' ? 'text-red-400' : 'text-gray-400'
+}`}>
+  {
+    ecgIntervals?.bpm > 0
+      ? ecgIntervals.bpm.toFixed(1)
+      : (() => {
+          // Use your actual R-peak indices array here
+          const rPeaks = pqrstPoints.current.filter(p => p.type === "R").map(p => p.index);
+          if (rPeaks && rPeaks.length >= 2) {
+            const rrIntervals = [];
+            for (let i = 1; i < rPeaks.length; i++) {
+              const rr = (rPeaks[i] - rPeaks[i - 1]) / SAMPLE_RATE * 1000;
+              if (rr >= 300 && rr <= 2000) rrIntervals.push(rr);
+            }
+            const avgRR = rrIntervals.length > 0
+              ? rrIntervals.reduce((a, b) => a + b, 0) / rrIntervals.length
+              : 0;
+            return avgRR > 0 ? (60000 / avgRR).toFixed(1) : "--";
+          }
+          return "--";
+        })()
+  } BPM
+</span>
                     </div>
                     <div className="text-xs text-gray-400 mt-1">
                       How many times your heart beats per minute. Normal is 60-100 BPM.
@@ -1628,9 +1652,9 @@ export default function EcgFullPanel() {
                   {/* Two-column layout for metrics */}
                   <div className="grid grid-cols-2 gap-3">
                     {/* RR Interval with explanation */}
-                    {/* <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
-                                               <span className="text-gray-300 text-sm">Beat-to-Beat:</span>
+                        <span className="text-gray-300 text-sm">Beat-to-Beat:</span>
                         <span className={`font-mono ${ecgIntervals.status.rr === 'normal' ? 'text-green-400' :
                           ecgIntervals.status.rr === 'short' ? 'text-yellow-400' :
                             ecgIntervals.status.rr === 'long' ? 'text-blue-400' : 'text-gray-400'
@@ -1641,18 +1665,12 @@ export default function EcgFullPanel() {
                       <div className="text-xs text-gray-400 mt-1">
                         R-R interval: 600-1000ms normal
                       </div>
-                    </div> */}
+                    </div>
 
                     {/* PR Interval with explanation */}
-                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                                       <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
-                        <span
-                          className="text-gray-300 text-sm cursor-pointer"
-                          data-tooltip-id="interval-tooltips"
-                          data-tooltip-content="PR Interval: Time from atrial to ventricular activation (normal: 120-200 ms). Prolonged PR may indicate AV block."
-                        >
-                          Conduction:
-                        </span>
+                        <span className="text-gray-300 text-sm">Conduction:</span>
                         <span className={`font-mono ${ecgIntervals.status.pr === 'normal' ? 'text-green-400' :
                           ecgIntervals.status.pr === 'short' ? 'text-yellow-400' :
                             ecgIntervals.status.pr === 'long' ? 'text-red-400' : 'text-gray-400'
@@ -1665,16 +1683,12 @@ export default function EcgFullPanel() {
                       </div>
                     </div>
 
+
+
                     {/* QRS Duration with explanation */}
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
-                        <span
-                          className="text-gray-300 text-sm cursor-pointer"
-                          data-tooltip-id="interval-tooltips"
-                          data-tooltip-content="QRS Duration: Time for ventricular activation (normal: <120 ms). Prolonged QRS may indicate bundle branch block."
-                        >
-                          Activation:
-                        </span>
+                        <span className="text-gray-300 text-sm">Activation:</span>
                         <span className={`font-mono ${ecgIntervals.status.qrs === 'normal' ? 'text-green-400' :
                           ecgIntervals.status.qrs === 'wide' ? 'text-red-400' : 'text-gray-400'
                           }`}>
@@ -1687,7 +1701,7 @@ export default function EcgFullPanel() {
                     </div>
 
                     {/* QTc Interval with explanation */}
-                    {/* <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                    <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
                         <span className="text-gray-300 text-sm">QTc:</span>
                         <span className={`font-mono ${ecgIntervals.status.qtc === 'normal' ? 'text-green-400' :
@@ -1699,20 +1713,14 @@ export default function EcgFullPanel() {
                       <div className="text-xs text-gray-400 mt-1">
                         Heart-rate adjusted QT interval
                       </div>
-                    </div> */}
+                    </div>
                   </div>
 
                   {/* ST Segment data - added section */}
                   {stSegmentData && (
                     <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                       <div className="flex justify-between items-center">
-                        <span
-                          className="text-gray-300 text-sm cursor-pointer"
-                          data-tooltip-id="interval-tooltips"
-                          data-tooltip-content="ST Segment: Elevation or depression may indicate ischemia or injury. Measured in mm from baseline."
-                        >
-                          ST Segment:
-                        </span>
+                        <span className="text-gray-300 text-sm">ST Segment:</span>
                         <span className={`font-mono ${stSegmentData.status === 'normal' ? 'text-green-400' :
                           stSegmentData.status === 'elevation' ? 'text-red-400' :
                             'text-yellow-400'
@@ -1770,13 +1778,6 @@ export default function EcgFullPanel() {
                   <p className="text-sm mt-2">We need a complete heartbeat for analysis</p>
                 </div>
               )}
-              <Tooltip
-                id="interval-tooltips"
-                place="right"
-                offset={20}
-                className="!bg-black !border !border-white/20 !rounded-xl !p-4 !text-white !shadow-lg !text-xs"
-                style={{ zIndex: 9999, maxWidth: 260 }}
-              />
             </div>
           </div>
         </div>

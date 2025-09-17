@@ -19,9 +19,13 @@ export async function testLoadModel() {
     // Load model
     const model = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
 
-    // Create test input (example: 720 features for beat-level model)
-    const testInputArray = Array(720).fill(0); // Replace with realistic test data if available
-    const testInput = tf.tensor(testInputArray, [1, 720, 1]);
+    // Get input shape from model (should be [null, 187, 1])
+    const inputShape = model.inputs[0].shape;
+    const inputLength = inputShape[1] || 187;
+
+    // Create test input (example: 187 features for beat-level model)
+    const testInputArray = Array(inputLength).fill(0); // Replace with realistic test data if available
+    const testInput = tf.tensor(testInputArray, [1, inputLength, 1]);
 
     // Run prediction
     const prediction = model.predict(testInput) as tf.Tensor;

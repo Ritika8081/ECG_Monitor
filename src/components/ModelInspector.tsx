@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import * as tf from '@tensorflow/tfjs';
-import { zscoreNorm, classLabels } from '../lib/modelTrainer'; // Ensure classLabels is exported
+import { zscoreNorm, classLabels } from '../lib/modelTrainer';
 
+const INPUT_LENGTH = 187; // Match your model's input shape
 
 export default function ModelInspector() {
   const [model, setModel] = useState<tf.LayersModel | null>(null);
@@ -12,7 +13,7 @@ export default function ModelInspector() {
   const [modelInfo, setModelInfo] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'structure' | 'weights' | 'test'>('structure');
   const [testInputText, setTestInputText] = useState<string>('');
-  const [testInputs, setTestInputs] = useState<number[]>(Array.from({ length: 720 }, () => Math.random() * 2 - 1));
+  const [testInputs, setTestInputs] = useState<number[]>(Array.from({ length: INPUT_LENGTH }, () => Math.random() * 2 - 1));
   const [prediction, setPrediction] = useState<any>(null);
 
   // Load model on component mount
@@ -20,38 +21,30 @@ export default function ModelInspector() {
     async function loadModel() {
       setLoading(true);
       try {
-        
-        // Check if model exists in localStorage
         const models = await tf.io.listModels();
         if (!models['localstorage://beat-level-ecg-model']) {
           setError('No model found in local storage. Please train the model first.');
           setLoading(false);
           return;
         }
-
-        // Load the model
         const loadedModel = await tf.loadLayersModel('localstorage://beat-level-ecg-model');
         setModel(loadedModel);
 
         // Extract model info
         const layers = loadedModel.layers;
-        const summary = [];
-
-        for (let i = 0; i < layers.length; i++) {
-          const layer = layers[i];
+        const summary = layers.map(layer => {
           const config = layer.getConfig();
           const weights = layer.getWeights();
           const weightShapes = weights.map(w => w.shape);
-
-          summary.push({
+          return {
             name: layer.name,
             type: layer.getClassName(),
             config,
             weightShapes,
             units: config.units,
             activation: config.activation
-          });
-        }
+          };
+        });
 
         setModelInfo({
           layers: summary,
@@ -67,7 +60,6 @@ export default function ModelInspector() {
         setLoading(false);
       }
     }
-
     loadModel();
   }, []);
 
@@ -78,16 +70,15 @@ export default function ModelInspector() {
       .split(',')
       .map(s => parseFloat(s.trim()))
       .filter(v => !isNaN(v));
-    if (arr.length === 720) setTestInputs(arr);
+    if (arr.length === INPUT_LENGTH) setTestInputs(arr);
   };
 
   // Make prediction with the model
   const handlePredict = async () => {
     if (!model) return;
-
     try {
       const normInputs = zscoreNorm(testInputs);
-      const inputTensor = tf.tensor3d([normInputs.map(v => [v])], [1, 720, 1]);
+      const inputTensor = tf.tensor3d([normInputs.map(v => [v])], [1, INPUT_LENGTH, 1]);
       const outputTensor = model.predict(inputTensor) as tf.Tensor;
       const probabilities = await outputTensor.data();
 
@@ -112,19 +103,6 @@ export default function ModelInspector() {
       console.error('Prediction error:', err);
       setError(err instanceof Error ? err.message : 'Prediction failed');
     }
-  };
-
-  // Handle input change for test values
-  const handleInputChange = (index: number, value: string) => {
-    const newInputs = [...testInputs];
-    newInputs[index] = parseFloat(value);
-    setTestInputs(newInputs);
-  };
-
-  // Reset test inputs to default
-  const resetInputs = () => {
-    setTestInputs([950, 60, 180, 100, 380, 450, 0.1, 30, 40, 2.0]);
-    setPrediction(null);
   };
 
   // Render loading state
@@ -179,7 +157,7 @@ export default function ModelInspector() {
         </button>
       </div>
 
-      {/* Tab Content - Make this scrollable */}
+      {/* Tab Content */}
       <div className="overflow-y-auto flex-1 pr-2 scrollable-content h-full max-h-[80vh]">
         {/* Structure Tab */}
         {activeTab === 'structure' && modelInfo && (
@@ -190,9 +168,9 @@ export default function ModelInspector() {
                 <p>Total Layers: {modelInfo.totalLayers}</p>
                 <p>Input Shape: [{modelInfo.inputShape.slice(1).join(', ')}]</p>
                 <p>Output Shape: [{modelInfo.outputShape.slice(1).join(', ')}]</p>
+                <p>Classes: {classLabels.join(', ')}</p>
               </div>
             </div>
-
             <h3 className="text-white font-medium mb-2">Layers</h3>
             {modelInfo.layers.map((layer: any, index: number) => (
               <div key={index} className="mb-4 p-3 bg-black/20 border border-white/10 rounded-lg">
@@ -201,8 +179,12 @@ export default function ModelInspector() {
                   <span className="text-gray-400 text-sm">{layer.type}</span>
                 </div>
                 <div className="mt-2 text-sm">
-                  <p className="text-gray-300">Units: {layer.units}</p>
-                  <p className="text-gray-300">Activation: {layer.activation}</p>
+                  {layer.units !== undefined && (
+                    <p className="text-gray-300">Units: {layer.units}</p>
+                  )}
+                  {layer.activation && (
+                    <p className="text-gray-300">Activation: {layer.activation}</p>
+                  )}
                   <p className="text-gray-300">
                     Weight Shapes: {layer.weightShapes.map((shape: number[]) =>
                       `[${shape.join(', ')}]`
@@ -223,29 +205,22 @@ export default function ModelInspector() {
                 This section shows the distribution of weights in each layer of the model.
               </p>
             </div>
-
             {model.layers.map((layer, index) => {
               const weights = layer.getWeights();
               if (weights.length === 0) return null;
-
               return (
                 <div key={index} className="mb-4 p-3 bg-black/20 border border-white/10 rounded-lg">
                   <h4 className="text-white mb-2">{layer.name}</h4>
-
                   {weights.map((weight, wIndex) => {
-                    // Get weight data
                     const data = weight.dataSync();
                     const min = Math.min(...Array.from(data));
                     const max = Math.max(...Array.from(data));
                     const avg = Array.from(data).reduce((a, b) => a + b, 0) / data.length;
-
                     return (
                       <div key={wIndex} className="mb-3">
                         <p className="text-sm text-gray-400">
                           {wIndex === 0 ? 'Weights' : 'Biases'} [{weight.shape.join('×')}]
                         </p>
-
-                        {/* Weight statistics */}
                         <div className="grid grid-cols-3 gap-2 mt-1 text-xs">
                           <div className="p-1 bg-black/30 rounded">
                             <span className="text-blue-400">Min: {min.toFixed(4)}</span>
@@ -257,7 +232,6 @@ export default function ModelInspector() {
                             <span className="text-red-400">Max: {max.toFixed(4)}</span>
                           </div>
                         </div>
-
                         {/* Simple histogram (10 buckets) */}
                         {data.length > 0 && (
                           <div className="mt-2 h-10 flex items-end">
@@ -268,7 +242,6 @@ export default function ModelInspector() {
                                 v => v >= bucketMin && v < bucketMax
                               ).length;
                               const height = `${Math.max(5, (bucketCount / data.length) * 100)}%`;
-
                               return (
                                 <div
                                   key={i}
@@ -298,7 +271,7 @@ export default function ModelInspector() {
             <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
               <h3 className="text-green-400 font-medium mb-2">Test Model</h3>
               <p className="text-sm text-white">
-                Paste 720 comma-separated ECG values below and click &quot;Predict&quot; to test the model.
+                Paste {INPUT_LENGTH} comma-separated ECG values below and click &quot;Predict&quot; to test the model.
               </p>
             </div>
             <textarea
@@ -306,29 +279,27 @@ export default function ModelInspector() {
               onChange={handleTextChange}
               rows={6}
               className="w-full bg-black/30 text-white border border-white/20 rounded px-3 py-2 mb-4"
-              placeholder="e.g. 0.12,0.15,0.13,... (720 values)"
+              placeholder={`e.g. 0.12,0.15,0.13,... (${INPUT_LENGTH} values)`}
             />
             <div className="flex gap-3 mb-6">
               <button
                 onClick={handlePredict}
                 className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg"
-                disabled={testInputs.length !== 720}
+                disabled={testInputs.length !== INPUT_LENGTH}
               >
                 Predict
               </button>
               <button
-                onClick={() => { setTestInputText(''); setTestInputs(Array.from({ length: 720 }, () => Math.random() * 2 - 1)); setPrediction(null); }}
+                onClick={() => { setTestInputText(''); setTestInputs(Array.from({ length: INPUT_LENGTH }, () => Math.random() * 2 - 1)); setPrediction(null); }}
                 className="px-6 py-2 bg-gray-700 hover:bg-gray-800 text-white font-medium rounded-lg"
               >
                 Reset
               </button>
             </div>
-
             {/* Prediction Results */}
             {prediction && (
               <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
                 <h3 className="text-green-400 font-medium mb-3">Prediction Results</h3>
-
                 <div className="mb-4 text-center">
                   <div className="text-3xl font-bold text-white mb-1">
                     {prediction.prediction}
@@ -337,7 +308,6 @@ export default function ModelInspector() {
                     {prediction.confidence.toFixed(2)}% confidence
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   {prediction.allProbabilities.map((item: any, index: number) => (
                     <div key={index} className="flex items-center">
@@ -366,28 +336,10 @@ export default function ModelInspector() {
   );
 }
 
-// Helper functions
-function getInputLabel(index: number): string {
-  const labels = [
-    "RR Interval (ms)",
-    "Heart Rate (BPM)",
-    "PR Interval (ms)",
-    "QRS Duration (ms)",
-    "QT Interval (ms)",
-    "QTc Interval (ms)",
-    "ST Deviation (mm)",
-    "RMSSD (ms)",
-    "SDNN (ms)",
-    "LF/HF Ratio"
-  ];
-  return labels[index] || `Input ${index + 1}`;
-}
-
 function getColorForProbability(probability: number): string {
-  // Return a color based on probability percentage
-  if (probability > 80) return "#22c55e"; // green-500
-  if (probability > 60) return "#4ade80"; // green-400
-  if (probability > 40) return "#facc15"; // yellow-400
-  if (probability > 20) return "#f59e42"; // orange-400
-  return "#ef4444"; // red-500
+  if (probability > 80) return "#22c55e";
+  if (probability > 60) return "#4ade80";
+  if (probability > 40) return "#facc15";
+  if (probability > 20) return "#f59e42";
+  return "#ef4444";
 }

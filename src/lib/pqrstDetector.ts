@@ -23,11 +23,9 @@ export class PQRSTDetector {
         const validRPeaks = rPeaks.filter(peakIndex => this.isValidQRS(data, peakIndex));
 
         if (validRPeaks.length === 0) {
-            console.log('No valid QRS complexes found in', rPeaks.length, 'potential R peaks');
+          
             return [];
         }
-
-        console.log('Found', validRPeaks.length, 'valid QRS complexes out of', rPeaks.length, 'potential R peaks');
 
         // Only process the most recent peaks (last 5 complexes)
         const recentPeaks = validRPeaks.slice(-5);
@@ -215,13 +213,12 @@ export class PQRSTDetector {
 
         // If signal is too weak, don't try to detect anything
         if (maxValue < 0.2) {
-            console.log('Signal too weak for direct PQRST detection, max value:', maxValue);
+           
             return [];
         }
 
         // R-peak threshold - use 60% of the maximum value
         const rThreshold = maxValue * 0.6;
-        console.log('Direct R-peak detection using threshold:', rThreshold, 'from max', maxValue);
 
         // Step 1: Find R peaks (high positive deflections)
         const rPeaks: number[] = [];
@@ -245,8 +242,6 @@ export class PQRSTDetector {
                 i += 50; // Adjust as needed for your signal
             }
         }
-
-        console.log('Direct detection found', rPeaks.length, 'R peaks');
 
         // If we found R peaks, use them to detect the full PQRST complex
         if (rPeaks.length > 0) {

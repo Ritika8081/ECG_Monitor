@@ -3,7 +3,7 @@ import { SessionAnalysisResults } from '../lib/sessionAnalyzer';
 import { PatientInfo } from './SessionRecording';
 import { 
   FileText, User, Clock, Activity, Heart, TrendingUp, 
-  Zap, AlertTriangle, ClipboardList
+  Zap, ClipboardList
 } from 'lucide-react';
 
 // Add this mapping for readable labels
@@ -41,7 +41,7 @@ export default function SessionReport({
 }: SessionReportProps) {
   // Prepare data for model input
   const features: number[] = [
-    // ...existing feature extraction logic...
+    
   ];
   
   // Ensure paddedFeatures is a flat array of 187 numbers
@@ -68,7 +68,7 @@ export default function SessionReport({
   const numBeats = rPeaks.length;
   const durationSeconds = parseDuration(analysisResults.summary.recordingDuration);
   const durationMinutes = durationSeconds / 60;
-  const sessionAverageBpm = durationMinutes > 0 ? numBeats / durationMinutes : 0;
+  
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8 w-full">
