@@ -39,6 +39,15 @@ export default function EcgFullPanel() {
     const [showIntervals, setShowIntervals] = useState(false); // Add this state
     const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
 
+    // Add these states to your component
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+    const [recordingTime, setRecordingTime] = useState("00:00");
+    const [recordedData, setRecordedData] = useState<number[]>([]);
+    const [currentSession, setCurrentSession] = useState<RecordingSession | null>(null);
+    const [sessionResults, setSessionResults] = useState<SessionAnalysisResults | null>(null);
+    const [showSessionReport, setShowSessionReport] = useState(false);
+    const sessionAnalyzer = useRef(new SessionAnalyzer(SAMPLE_RATE));
 
     // Update this state for physiological state
     const [physioState, setPhysioState] = useState<{ state: string; confidence: number }>({
@@ -252,6 +261,7 @@ export default function EcgFullPanel() {
     }
 
     const prevHrvMetrics = useRef<HRVMetrics | null>(null);
+    const lastProcessedPeak = useRef<number | null>(null);
 
     function updatePeaks() {
         // Add debug for signal diagnostics
@@ -283,6 +293,9 @@ export default function EcgFullPanel() {
             }
         }
 
+        // Log all detected R peaks
+        console.log('Detected R peaks:', peaks.length, 'Indices:', peaks);
+
         // Generate visualization (same as before)
         peakData.current = bpmCalculator.current.generatePeakVisualization(dataCh0.current, peaks);
 
@@ -298,7 +311,7 @@ export default function EcgFullPanel() {
 
         if (peaks.length >= 1) {
             // Existing PQRST detection with peaks
-            pqrstPoints.current = pqrstDetector.current.detectWaves(dataCh0.current, peaks, sampleIndex.current);
+            pqrstPoints.current = pqrstDetector.current.detectWaves(dataCh0.current, peaks);
             pqrstDetected = pqrstPoints.current.length > 0;
 
             if (showPQRST) {
@@ -428,22 +441,18 @@ export default function EcgFullPanel() {
     useEffect(() => {
         async function loadModel() {
             try {
-                const exists = await checkModelExists();
-                if (exists) {
-                    // CHANGE THIS LINE: use the correct model name
-
-                    const basePath = window.location.pathname.startsWith('/ECG_Monitor') ? '/ECG_Monitor/' : '/';
-                    const model = await tf.loadLayersModel(`${basePath}models/beat-level-ecg-model.json`);
-
-                    setEcgModel(model);
-                    setModelLoaded(true);
-                    console.log('ECG model loaded successfully');
-                }
+                // Always try to load the model directly
+                const basePath = window.location.pathname.startsWith('/ECG_Monitor') ? '/ECG_Monitor/' : '/';
+                const model = await tf.loadLayersModel(`${basePath}models/beat-level-ecg-model.json`);
+                setEcgModel(model);
+                setModelLoaded(true);
+                console.log('ECG model loaded successfully');
             } catch (err) {
+                setModelLoaded(false);
+                setEcgModel(null);
                 console.error('Failed to load model:', err);
             }
         }
-
         loadModel();
     }, []);
 
@@ -504,6 +513,9 @@ export default function EcgFullPanel() {
         }
     }
 
+    // 1. Fix: AI panel not updating (batchResult never set if BATCH_SIZE not reached)
+    // Solution: If there are any predictions, show the latest even if < BATCH_SIZE
+
     const analyzeCurrent = async () => {
         console.log("analyzeCurrent called");
         if (!ecgModel) {
@@ -545,8 +557,8 @@ export default function EcgFullPanel() {
                 return;
             }
 
-            const predictedSymbol = classLabels[maxIndex]; // This is likely 'N', 'V', etc.
-            const predictedClass = mapSymbolToAAMI(predictedSymbol); // Now 'Normal', 'Ventricular', etc.
+            // FIX: Define predictedClass here
+            const predictedClass = classLabels[maxIndex];
             const confidence = predArray[maxIndex] * 100;
 
             setModelPrediction({
@@ -554,19 +566,20 @@ export default function EcgFullPanel() {
                 confidence: confidence
             });
 
-            // Add this to keep track of recent beat predictions
             setBeatPredictions(prev => {
                 const updated = [...prev, { prediction: predictedClass, confidence }];
-                if (updated.length >= BATCH_SIZE) {
-                    // Calculate summary
-                    const summary = getRollingSummary(updated);
+                // Keep only the last BATCH_SIZE predictions
+                const rolling = updated.slice(-BATCH_SIZE);
+
+                // Always set batchResult if we have at least 1 prediction
+                if (rolling.length > 0) {
+                    const summary = getRollingSummary(rolling);
                     setBatchResult({
                         summary,
-                        latest: updated[updated.length - 1]
+                        latest: rolling[rolling.length - 1]
                     });
-                    return []; // Clear buffer for next batch
                 }
-                return updated;
+                return rolling;
             });
 
             inputTensor.dispose();
@@ -810,38 +823,8 @@ export default function EcgFullPanel() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showAIAnalysis, modelLoaded, ecgIntervals]);
 
-    function calculateQTc(qt: number, rr: number) {
-        // Different formulas for different scenarios
+ 
 
-        // Bazett (most common, but less accurate at extreme heart rates)
-        const bazett = qt / Math.sqrt(rr / 1000);
-
-        // Fridericia (better for bradycardia)
-        const fridericia = qt / Math.pow(rr / 1000, 1 / 3);
-
-        // Framingham (good for general population)
-        const framingham = qt + 0.154 * (1000 - rr);
-
-        // Hodges (another alternative)
-        const hodges = qt + 1.75 * (60000 / rr - 60);
-
-        // Select formula based on heart rate
-        const hr = 60000 / rr;
-
-        if (hr < 60) return fridericia; // For bradycardia
-        if (hr > 100) return framingham; // For tachycardia
-        return bazett; // For normal range
-    }
-
-    // Add these states to your component
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
-    const [recordingTime, setRecordingTime] = useState("00:00");
-    const [recordedData, setRecordedData] = useState<number[]>([]);
-    const [currentSession, setCurrentSession] = useState<RecordingSession | null>(null);
-    const [sessionResults, setSessionResults] = useState<SessionAnalysisResults | null>(null);
-    const [showSessionReport, setShowSessionReport] = useState(false);
-    const sessionAnalyzer = useRef(new SessionAnalyzer(SAMPLE_RATE));
 
     // Initialize the session analyzer with model
     useEffect(() => {
@@ -1262,13 +1245,14 @@ export default function EcgFullPanel() {
                             <div className="w-16 flex justify-center">
                                 <button
                                     onClick={() => {
-                                        // If we're turning on the analysis and model is loaded
-                                        if (!showAIAnalysis && modelLoaded && connected) {
-                                            analyzeCurrent(); // Run analysis immediately when showing
-                                            setShowAIAnalysis(true);
-                                        } else {
-                                            setShowAIAnalysis(!showAIAnalysis); // Just toggle visibility
-                                        }
+                                        setShowAIAnalysis((prev) => {
+                                            const next = !prev;
+                                            // Always try to analyze if opening panel and model is loaded
+                                            if (next && modelLoaded) {
+                                                analyzeCurrent();
+                                            }
+                                            return next;
+                                        });
                                     }}
                                     className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${showAIAnalysis
                                         ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 hover:bg-yellow-500/30'
@@ -1427,132 +1411,114 @@ export default function EcgFullPanel() {
             )}
 
             {/* AI Prediction Results Panel */}
-            {showAIAnalysis && (
-                <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold flex items-center gap-2">
-                            <Zap className="w-5 h-5 text-yellow-400" />
-                            AI Analysis
-                        </h3>
-                        <button
-                            onClick={() => setShowAIAnalysis(false)}
-                            className="text-gray-400 hover:text-white"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                    {/* Only show summary if batchResult is ready */}
-                    {!batchResult ? (
-                        <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40 text-center">
-                            <span className="font-bold text-lg text-yellow-400">Collecting beats...</span>
-                            <p className="text-xs text-gray-400 mt-2">
-                                Waiting to collect {BATCH_SIZE} heartbeats for analysis.
-                            </p>
-                        </div>
-                    ) : (
-                        <>
-                            {/* Rolling Summary */}
-                            {(() => {
-                                const summary = batchResult.summary;
-                                if (!summary) return null;
-                                const details = predictionDetails[summary.majorityClass] || predictionDetails["Other"];
-                                return (
-                                    <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
-                                            <span className="font-bold text-lg" style={{
-                                                color:
-                                                    summary.majorityClass === "Normal" ? "#22c55e" :
-                                                        summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                                            }}>
-                                                {details.label}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs text-gray-400 mb-1">
-                                            {details.description}
-                                        </div>
-                                        <div className="text-xs text-gray-500 mb-2">
-                                            Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
-                                        </div>
-                                        <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
-                                            <div
-                                                className="h-1.5 rounded-full"
-                                                style={{
-                                                    width: `${summary.majorityPercent}%`,
-                                                    backgroundColor:
-                                                        summary.majorityClass === "Normal" ? "#22c55e" :
-                                                            summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                                                }}
-                                            ></div>
-                                        </div>
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            {summary.majorityPercent.toFixed(1)}% {details.label} in last {summary.total} beats.
-                                        </p>
-                                        <ul className="mt-2 text-xs text-gray-300">
-                                            {Object.entries(summary.counts).map(([cls, cnt]) => {
-                                                const d = predictionDetails[cls] || predictionDetails["Other"];
-                                                return (
-                                                    <li key={cls}>
-                                                        {d.label}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
-                                                        <span className="text-gray-500 ml-2">[{d.symbols.join(", ")}]</span>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                        {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
-                                            <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
-                                                Warning: Abnormal rhythm detected!
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
+           {showAIAnalysis && (
+    <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
+        <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-400" />
+                AI Analysis
+            </h3>
+            <button
+                onClick={() => setShowAIAnalysis(false)}
+                className="text-gray-400 hover:text-white"
+            >
+                ✕
+            </button>
+        </div>
+        {batchResult && batchResult.summary ? (
+            // ...existing summary rendering...
+            // (no change needed here)
+            (() => {
+                const summary = batchResult.summary;
+                const isOther = summary.majorityClass === "Other" || summary.majorityClass === "unknown";
+                const otherFraction =
+                    (summary.counts["Other"] || 0) / summary.total > 0.5 ||
+                    (summary.counts["unknown"] || 0) / summary.total > 0.5;
 
-                            {/* Per-beat prediction (latest beat) */}
-                            {modelPrediction && (() => {
-                                const details = predictionDetails[modelPrediction.prediction] || predictionDetails["Other"];
-                                return (
-                                    <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                                        <div className="flex items-center justify-between mb-1">
-                                            <span className="text-sm text-gray-300">Latest Beat:</span>
-                                            <span className="font-bold text-lg" style={{
-                                                color:
-                                                    modelPrediction.prediction === "Normal" ? "#22c55e" :
-                                                        modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-                                            }}>
-                                                {details.label}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs text-gray-400 mb-1">
-                                            {details.description}
-                                        </div>
-                                        <div className="text-xs text-gray-500 mb-2">
-                                            Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
-                                        </div>
-                                        <div className="w-full bg-gray-700 rounded-full h-1.5">
-                                            <div
-                                                className="h-1.5 rounded-full"
-                                                style={{
-                                                    width: `${modelPrediction.confidence}%`,
-                                                    backgroundColor:
-                                                        modelPrediction.prediction === "Normal" ? "#22c55e" :
-                                                            modelPrediction.prediction === "Analyzing" ? "#94a3b8" : "#ef4444"
-                                                }}
-                                            ></div>
-                                        </div>
-                                        <p className="text-xs text-gray-400 mt-1">
-                                            Confidence: {modelPrediction.confidence.toFixed(1)}%
-                                        </p>
-                                    </div>
-                                );
-                            })()}
-                        </>
-                    )}
-                    <div className="mt-4 text-xs text-gray-500 italic">
-                        This is not a diagnostic tool. Results should be confirmed by medical professionals.
+                if (isOther || otherFraction) {
+                    return (
+                        <div className="mb-4 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-center font-semibold">
+                            <div className="text-lg mb-1">⚠️ Poor Signal or Unclassified Beats</div>
+                            <div className="text-sm mb-2">
+                                Most recent heartbeats could not be classified.<br />
+                                Please check electrode contact, reduce movement, and ensure good skin contact.
+                            </div>
+                            <div className="text-xs text-gray-400">
+                                Reliable rolling analysis is not possible until signal quality improves.
+                            </div>
+                        </div>
+                    );
+                }
+
+                const details = predictionDetails[summary.majorityClass] || predictionDetails["Other"];
+                return (
+                    <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                    <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
+                        <span className="font-bold text-lg" style={{
+                            color:
+                                summary.majorityClass === "Normal" ? "#22c55e" :
+                                    summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                        }}>
+                            {details.label}
+                        </span>
                     </div>
+                    <div className="text-xs text-gray-400 mb-1">
+                        {details.description}
+                    </div>
+                    <div className="text-xs text-gray-500 mb-2">
+                        Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
+                        <div
+                            className="h-1.5 rounded-full"
+                            style={{
+                                width: `${summary.majorityPercent}%`,
+                                backgroundColor:
+                                    summary.majorityClass === "Normal" ? "#22c55e" :
+                                        summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                            }}
+                        ></div>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                        {summary.majorityPercent.toFixed(1)}% {details.label} in last {summary.total} beats.
+                    </p>
+                    <ul className="mt-2 text-xs text-gray-300">
+                        {Object.entries(summary.counts).map(([cls, cnt]) => {
+                            const d = predictionDetails[cls] || predictionDetails["Other"];
+                            return (
+                                <li key={cls}>
+                                    {d.label}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
+                                    <span className="text-gray-500 ml-2">[{d.symbols.join(", ")}]</span>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
+                        <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                            Warning: Abnormal rhythm detected!
+                        </div>
+                    )}
                 </div>
-            )}
+                );
+            })()
+        ) : (
+            <div className="mb-4 p-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 text-center font-semibold">
+                <div className="text-lg mb-1">No AI analysis yet</div>
+                <div className="text-sm">
+                    {!modelLoaded
+                        ? "AI model not loaded. Please wait or check your connection."
+                        : !connected
+                            ? "Device not connected. Connect to start AI analysis."
+                            : "Waiting for predictions..."}
+                </div>
+            </div>
+        )}
+        <div className="mt-4 text-xs text-gray-500 italic">
+            This is not a diagnostic tool. Results should be confirmed by medical professionals.
+        </div>
+    </div>
+)}
 
             {/* ECG Intervals Panel */}
             {showIntervals && (
