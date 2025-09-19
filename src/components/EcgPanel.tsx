@@ -409,16 +409,16 @@ export default function EcgFullPanel() {
             if (connected) {
                 // Get peaks using the most reliable method
                 const peaks = panTompkins.current.detectQRS(dataCh0.current);
-                
+
                 // If Pan-Tompkins fails, use backup method
                 let finalPeaks = peaks;
                 if (peaks.length === 0) {
                     finalPeaks = bpmCalculator.current.detectPeaks(dataCh0.current);
                 }
-                
+
                 // Calculate BPM from peaks
                 const bpm = bpmCalculator.current.calculateBPMFromPeaks(finalPeaks);
-                
+
                 if (bpm && bpm >= 40 && bpm <= 200) {
                     const smoothedBPM = bpmCalculator.current.smoothBPM(bpm);
                     setBpmDisplay(Math.round(smoothedBPM) + " BPM");
@@ -534,7 +534,7 @@ export default function EcgFullPanel() {
 
         // For 1000 points buffer, get the last MODEL_INPUT_LENGTH samples for prediction
         let ecgWindow: number[];
-        
+
         if (sampleIndex.current >= MODEL_INPUT_LENGTH) {
             // Normal case: get the most recent samples
             ecgWindow = dataCh0.current.slice(sampleIndex.current - MODEL_INPUT_LENGTH, sampleIndex.current);
@@ -1406,10 +1406,7 @@ export default function EcgFullPanel() {
                                 </div>
                             </div>
 
-                            {/* Sample Info */}
-                            <div className="mt-4 pt-4 border-t border-white/20 text-xs text-gray-400">
-                                Samples: {hrvMetrics.sampleCount} RR intervals
-                            </div>
+
                         </>
                     ) : (
                         <div className="text-center text-gray-400 py-8">
@@ -1427,114 +1424,132 @@ export default function EcgFullPanel() {
             )}
 
             {/* AI Prediction Results Panel */}
-           {showAIAnalysis && (
-    <div className="absolute right-4 top-[calc(50%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
-        <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold flex items-center gap-2">
-                <Zap className="w-5 h-5 text-yellow-400" />
-                AI Analysis
-            </h3>
-            <button
-                onClick={() => setShowAIAnalysis(false)}
-                className="text-gray-400 hover:text-white"
-            >
-                ✕
-            </button>
-        </div>
-        {batchResult && batchResult.summary ? (
-            // ...existing summary rendering...
-            // (no change needed here)
-            (() => {
-                const summary = batchResult.summary;
-                const isOther = summary.majorityClass === "Other" || summary.majorityClass === "unknown";
-                const otherFraction =
-                    (summary.counts["Other"] || 0) / summary.total > 0.5 ||
-                    (summary.counts["unknown"] || 0) / summary.total > 0.5;
+            {showAIAnalysis && (
+                <div className="absolute right-4 top-[calc(40%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold flex items-center gap-2">
+                            <Zap className="w-5 h-5 text-yellow-400" />
+                            AI Analysis
+                        </h3>
+                        <button
+                            onClick={() => setShowAIAnalysis(false)}
+                            className="text-gray-400 hover:text-white"
+                        >
+                            ✕
+                        </button>
+                    </div>
 
-                if (isOther || otherFraction) {
-                    return (
-                        <div className="mb-4 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-center font-semibold">
-                            <div className="text-lg mb-1">⚠️ Poor Signal or Unclassified Beats</div>
-                            <div className="text-sm mb-2">
-                                Most recent heartbeats could not be classified.<br />
-                                Please check electrode contact, reduce movement, and ensure good skin contact.
-                            </div>
-                            <div className="text-xs text-gray-400">
-                                Reliable rolling analysis is not possible until signal quality improves.
+                    {/* Development Phase Disclaimer */}
+                    <div className="mb-4 p-3 rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-400">
+                        <div className="flex items-start gap-2">
+                            <span className="text-lg">🚧</span>
+                            <div>
+                                <div className="text-sm font-semibold mb-1">Development Phase Notice</div>
+                                <div className="text-xs text-orange-300">
+                                    The AI feature is currently in testing and development phase. Results may not be accurate or reliable. 
+                                    We will inform you as soon as this feature is fully operational and validated.
+                                </div>
                             </div>
                         </div>
-                    );
-                }
+                    </div>
 
-                const details = predictionDetails[summary.majorityClass] || predictionDetails["Other"];
-                return (
-                    <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
-                        <span className="font-bold text-lg" style={{
-                            color:
-                                summary.majorityClass === "Normal" ? "#22c55e" :
-                                    summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                        }}>
-                            {details.label}
-                        </span>
-                    </div>
-                    <div className="text-xs text-gray-400 mb-1">
-                        {details.description}
-                    </div>
-                    <div className="text-xs text-gray-500 mb-2">
-                        Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
-                        <div
-                            className="h-1.5 rounded-full"
-                            style={{
-                                width: `${summary.majorityPercent}%`,
-                                backgroundColor:
-                                    summary.majorityClass === "Normal" ? "#22c55e" :
-                                        summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                            }}
-                        ></div>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-1">
-                        {summary.majorityPercent.toFixed(1)}% {details.label} in last {summary.total} beats.
-                    </p>
-                    <ul className="mt-2 text-xs text-gray-300">
-                        {Object.entries(summary.counts).map(([cls, cnt]) => {
-                            const d = predictionDetails[cls] || predictionDetails["Other"];
+                    {batchResult && batchResult.summary ? (
+                        // ...existing summary rendering...
+                        // (no change needed here)
+                        (() => {
+                            const summary = batchResult.summary;
+                            const isOther = summary.majorityClass === "Other" || summary.majorityClass === "unknown";
+                            const otherFraction =
+                                (summary.counts["Other"] || 0) / summary.total > 0.5 ||
+                                (summary.counts["unknown"] || 0) / summary.total > 0.5;
+
+                            if (isOther || otherFraction) {
+                                return (
+                                    <div className="mb-4 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-center font-semibold">
+                                        <div className="text-lg mb-1">⚠️ Poor Signal or Unclassified Beats</div>
+                                        <div className="text-sm mb-2">
+                                            Most recent heartbeats could not be classified.<br />
+                                            Please check electrode contact, reduce movement, and ensure good skin contact.
+                                        </div>
+                                        <div className="text-xs text-gray-400">
+                                            Reliable rolling analysis is not possible until signal quality improves.
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            const details = predictionDetails[summary.majorityClass] || predictionDetails["Other"];
                             return (
-                                <li key={cls}>
-                                    {d.label}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
-                                    <span className="text-gray-500 ml-2">[{d.symbols.join(", ")}]</span>
-                                </li>
+                                <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                                    <div className="flex items-center justify-between mb-1">
+                                        <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
+                                        <span className="font-bold text-lg" style={{
+                                            color:
+                                                summary.majorityClass === "Normal" ? "#22c55e" :
+                                                    summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                                        }}>
+                                            {details.label}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-gray-400 mb-1">
+                                        {details.description}
+                                    </div>
+                                    <div className="text-xs text-gray-500 mb-2">
+                                        Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
+                                    </div>
+                                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
+                                        <div
+                                            className="h-1.5 rounded-full"
+                                            style={{
+                                                width: `${summary.majorityPercent}%`,
+                                                backgroundColor:
+                                                    summary.majorityClass === "Normal" ? "#22c55e" :
+                                                        summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
+                                            }}
+                                        ></div>
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        {summary.majorityPercent.toFixed(1)}% {details.label} in last {summary.total} beats.
+                                    </p>
+                                    <ul className="mt-2 text-xs text-gray-300">
+                                        {Object.entries(summary.counts).map(([cls, cnt]) => {
+                                            const d = predictionDetails[cls] || predictionDetails["Other"];
+                                            return (
+                                                <li key={cls}>
+                                                    {d.label}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
+                                                    <span className="text-gray-500 ml-2">[{d.symbols.join(", ")}]</span>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
+                                        <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                                            Warning: Abnormal rhythm detected!
+                                        </div>
+                                    )}
+                                </div>
                             );
-                        })}
-                    </ul>
-                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
-                        <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
-                            Warning: Abnormal rhythm detected!
+                        })()
+                    ) : (
+                        <div className="mb-4 p-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 text-center font-semibold">
+                            <div className="text-lg mb-1">No AI analysis yet</div>
+                            <div className="text-sm">
+                                {!modelLoaded
+                                    ? "AI model not loaded. Please wait or check your connection."
+                                    : !connected
+                                        ? "Device not connected. Connect to start AI analysis."
+                                        : "Waiting for predictions..."}
+                            </div>
                         </div>
                     )}
+                    
+                    {/* Enhanced disclaimer */}
+                    <div className="mt-4 text-xs text-gray-500 italic border-t border-gray-700 pt-3">
+                        <div className="mb-1">⚠️ <strong>Important:</strong> This is not a diagnostic tool.</div>
+                        <div>AI feature is experimental and under development. Results should be confirmed by medical professionals.</div>
+                    </div>
                 </div>
-                );
-            })()
-        ) : (
-            <div className="mb-4 p-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 text-center font-semibold">
-                <div className="text-lg mb-1">No AI analysis yet</div>
-                <div className="text-sm">
-                    {!modelLoaded
-                        ? "AI model not loaded. Please wait or check your connection."
-                        : !connected
-                            ? "Device not connected. Connect to start AI analysis."
-                            : "Waiting for predictions..."}
-                </div>
-            </div>
-        )}
-        <div className="mt-4 text-xs text-gray-500 italic">
-            This is not a diagnostic tool. Results should be confirmed by medical professionals.
-        </div>
-    </div>
-)}
+            )}
 
             {/* ECG Intervals Panel */}
             {showIntervals && (
@@ -1624,7 +1639,7 @@ export default function EcgFullPanel() {
                                                                 return avgRR > 0 ? (60000 / avgRR).toFixed(1) : "--";
                                                             }
                                                             return "--";
-                                                                                                               })()
+                                                        })()
                                                 } BPM
                                             </span>
                                         </div>
@@ -1684,28 +1699,28 @@ export default function EcgFullPanel() {
                                             </div>
                                         </div>
 
-                                         {/* ST Segment data - added section */}
-                                    {stSegmentData && (
-                                        <div className="p-3 rounded-lg border border-white/20 bg-black/40">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-300 text-sm">ST Segment:</span>
-                                                <span className={`font-mono ${stSegmentData.status === 'normal' ? 'text-green-400' :
-                                                    stSegmentData.status === 'elevation' ? 'text-red-400' :
-                                                        'text-yellow-400'
-                                                    }`}>
-                                                    {stSegmentData.deviation.toFixed(2)} mm
-                                                </span>
+                                        {/* ST Segment data - added section */}
+                                        {stSegmentData && (
+                                            <div className="p-3 rounded-lg border border-white/20 bg-black/40">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-gray-300 text-sm">ST Segment:</span>
+                                                    <span className={`font-mono ${stSegmentData.status === 'normal' ? 'text-green-400' :
+                                                        stSegmentData.status === 'elevation' ? 'text-red-400' :
+                                                            'text-yellow-400'
+                                                        }`}>
+                                                        {stSegmentData.deviation.toFixed(2)} mm
+                                                    </span>
+                                                </div>
+                                                <div className="text-xs text-gray-400 mt-1">
+                                                    {stSegmentData.status === 'normal' ? 'Normal ST segment' :
+                                                        stSegmentData.status === 'elevation' ? 'ST elevation detected' :
+                                                            'ST depression detected'}
+                                                </div>
                                             </div>
-                                            <div className="text-xs text-gray-400 mt-1">
-                                                {stSegmentData.status === 'normal' ? 'Normal ST segment' :
-                                                    stSegmentData.status === 'elevation' ? 'ST elevation detected' :
-                                                        'ST depression detected'}
-                                            </div>
-                                        </div>
-                                    )}
+                                        )}
                                     </div>
 
-                                  
+
 
                                     {/* Abnormality indicators - full width */}
                                     {ecgIntervals.status.pr === 'long' || ecgIntervals.status.qrs === 'wide' || ecgIntervals.status.qtc === 'prolonged' ? (
@@ -1724,7 +1739,7 @@ export default function EcgFullPanel() {
                                                         <span>Wide QRS complex</span>
                                                     </li>
                                                 )}
-                                               
+
                                             </ul>
                                         </div>
                                     ) : (

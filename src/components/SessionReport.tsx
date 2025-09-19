@@ -131,7 +131,7 @@ export default function SessionReport({
                     </div>
                 </div>
 
-                <div className="px-6 pb-6">
+                <div className="px-6 pb-4">
                     {/* Session Summary Grid */}
                     <div className="mb-6">
                        
@@ -292,39 +292,19 @@ export default function SessionReport({
                                         </div>
 
                                         {/* Abnormalities Section */}
-                                        {analysisResults.abnormalities.length > 0 ? (
-                                            <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
-                                                <div className="text-xs font-medium text-gray-300 mb-2">Detected Abnormalities:</div>
-                                                <ul className="space-y-1">
-                                                    {analysisResults.abnormalities.map((abnormality, index) => (
-                                                        <li key={index} className="flex items-start gap-2">
-                                                            <span className={`w-2 h-2 rounded-full mt-1 flex-shrink-0 ${
-                                                                abnormality.severity === 'high' ? 'bg-red-500' :
-                                                                abnormality.severity === 'medium' ? 'bg-yellow-500' : 'bg-blue-500'
-                                                            }`}></span>
-                                                            <div>
-                                                                <div className={`font-medium text-xs ${
-                                                                    abnormality.severity === 'high' ? 'text-red-400' :
-                                                                    abnormality.severity === 'medium' ? 'text-yellow-400' : 'text-blue-400'
-                                                                }`}>
-                                                                    {abnormality.type}
-                                                                </div>
-                                                                <div className="text-xs text-gray-300">
-                                                                    {abnormality.description}
-                                                                </div>
-                                                            </div>
-                                                        </li>
-                                                    ))}
-                                                </ul>
+                                     
+                                          <div className="mb-4 p-3 rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-400">
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-lg">🚧</span>
+                                        <div>
+                                            <div className="text-xs font-semibold mb-1">Development Phase Notice</div>
+                                            <div className="text-xs text-orange-300">
+                                                The AI feature is currently in testing and development phase. Results may not be accurate or reliable. 
+                                                We will inform you as soon as this feature is fully operational and validated.
                                             </div>
-                                        ) : (
-                                            <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3">
-                                                <div className="font-medium text-green-400 text-xs">No Significant Abnormalities</div>
-                                                <div className="text-xs text-gray-300 mt-1">
-                                                    All analyzed parameters appear to be within expected ranges.
-                                                </div>
-                                            </div>
-                                        )}
+                                        </div>
+                                    </div>
+                                </div>
                                     
                                     </div>
                                 </div>
@@ -334,10 +314,7 @@ export default function SessionReport({
 
                     {/* Heart Rate and Rhythm Section */}
                     <div className="mb-6">
-                        <h3 className="text-white font-medium flex items-center gap-2 mb-3">
-                            <Heart className="w-4 h-4 text-red-400" />
-                            Heart Rate and Rhythm Analysis
-                        </h3>
+                        
                         <div className="grid grid-cols-4 gap-4">
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
                                 <div className="text-gray-400 text-sm mb-1">Average Heart Rate</div>
@@ -401,10 +378,7 @@ export default function SessionReport({
 
                     {/* ECG Intervals Section */}
                     <div className="mb-6">
-                        <h3 className="text-white font-medium flex items-center gap-2 mb-1">
-                            <Activity className="w-4 h-4 text-blue-400" />
-                            ECG Interval Analysis
-                        </h3>
+                       
                         <div className="grid grid-cols-5 gap-3">
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
                                 <div className="text-gray-400 text-xs mb-1">PR Interval</div>

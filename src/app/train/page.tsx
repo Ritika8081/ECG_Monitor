@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { trainBeatLevelECGModelAllFiles, classLabels } from '@/lib/modelTrainer';
+import { trainBeatLevelECGModelAllFiles, classLabels, allFilePairs } from '@/lib/modelTrainer';
 import { checkModelExists } from '../../lib/modelTester';
 import ModelInspector from '../../components/ModelInspector';
 import NavBar from '../../components/NavBar';
@@ -32,7 +32,10 @@ export default function TrainPage() {
     setLogs([]);
 
     try {
-      appendLog("🚀 Starting training with new 360Hz model...");
+      appendLog("🚀 Starting training with updated 360Hz AAMI-5 model...");
+      appendLog(`📊 Using ${allFilePairs.length} MIT-BIH records for comprehensive training`);
+      appendLog("🔧 Model Configuration: 135 samples @ 360Hz (375ms beat windows)");
+      
       await trainBeatLevelECGModelAllFiles(
         // onEpoch callback
         (epoch, logsObj) => {
@@ -41,14 +44,15 @@ export default function TrainPage() {
           const trainLoss = logsObj?.loss?.toFixed(4);
           const valLoss = logsObj?.val_loss?.toFixed(4);
           appendLog(
-            `Epoch ${epoch + 1}/10 | Train Acc: ${trainAcc.toFixed(2)}% | Val Acc: ${valAcc.toFixed(2)}% | Train Loss: ${trainLoss} | Val Loss: ${valLoss}`
+            `📈 Epoch ${epoch + 1}/10 | Train Acc: ${trainAcc.toFixed(2)}% | Val Acc: ${valAcc.toFixed(2)}% | Train Loss: ${trainLoss} | Val Loss: ${valLoss}`
           );
         },
         // onLog callback
         appendLog
       );
-      appendLog("✅ Training completed successfully!");
+      appendLog("✅ Training completed successfully with 360Hz model!");
       appendLog("📁 Model saved to browser downloads as 'beat-level-ecg-model'");
+      appendLog("🎯 Model ready for real-time ECG beat classification");
       setTrainingComplete(true);
       setModelExists(true);
     } catch (err) {
@@ -60,8 +64,9 @@ export default function TrainPage() {
   };
 
   // Updated constants for 360Hz model
-  const samplingRate = 360; // Updated from 500 to 360
-  const beatLength = 135; // Updated from 187 to 135
+  const samplingRate = 360; // Native 360Hz sampling rate
+  const beatLength = 135; // 135 samples for 375ms at 360Hz
+  const beatDurationMs = (beatLength / samplingRate * 1000).toFixed(0);
 
   return (
     <div className="w-full min-h-screen h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-auto flex flex-col">
@@ -74,32 +79,52 @@ export default function TrainPage() {
               <h2 className="text-lg font-bold text-white mb-2">ECG Beat Classification Model Training</h2>
               <div className="mb-2 flex-1 overflow-y-auto">
                 <p className="text-white mb-2 text-sm">
-                  Train a deep learning model to classify ECG heartbeat patterns using the AAMI 5-class standard for real-time arrhythmia detection.
+                  Train an advanced deep learning model for ECG heartbeat classification using the AAMI 5-class standard with optimized 360Hz sampling for real-time arrhythmia detection.
                 </p>
-                <div className="mb-2 text-xs text-blue-300">
+                
+                {/* Updated Model Specifications */}
+                <div className="mb-2 text-xs text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-lg p-2">
+                  <h4 className="font-bold text-blue-200 mb-1">Model Specifications (Updated):</h4>
                   <p>• <b>Sampling Rate:</b> {samplingRate} Hz (native 360Hz - no resampling)</p>
-                  <p>• <b>Beat Window:</b> {beatLength} samples ({(beatLength / samplingRate * 1000).toFixed(0)}ms)</p>
-                  <p>• <b>Model Input:</b> [{beatLength}, 1] tensor shape</p>
-                  <p>• <b>Classes:</b> {classLabels.join(', ')}</p>
-                  <p>• <b>Architecture:</b> CNN with 4 conv layers + 2 dense layers</p>
+                  <p>• <b>Beat Window:</b> {beatLength} samples ({beatDurationMs}ms duration)</p>
+                  <p>• <b>Input Shape:</b> [{beatLength}, 1] tensor for CNN processing</p>
+                  <p>• <b>AAMI Classes:</b> {classLabels.join(', ')}</p>
+                  <p>• <b>Architecture:</b> 4-layer CNN + GAP + 2 dense layers</p>
+                  <p>• <b>Training Data:</b> {allFilePairs.length} MIT-BIH patient records</p>
                 </div>
+
+                {/* Model Status */}
                 {modelExists && (
                   <div className="p-2 bg-green-500/10 border border-green-500/30 rounded-lg mb-2">
                     <div className="flex items-center">
                       <div className="w-2 h-2 bg-green-400 rounded-full mr-2"></div>
-                      <span className="text-green-400 font-medium text-xs">Model trained and ready for inference</span>
+                      <span className="text-green-400 font-medium text-xs">360Hz AAMI-5 model trained and ready</span>
                     </div>
                   </div>
                 )}
-                <div className="space-y-1 text-xs text-gray-300 mb-2">
-                  <p>• Uses 0 MIT-BIH records for training</p>
+
+                {/* Training Details */}
+                <div className="space-y-1 text-xs text-gray-300 mb-2 bg-slate-800/30 border border-slate-700/50 rounded-lg p-2">
+                  <h4 className="font-bold text-gray-200 mb-1">Training Details:</h4>
                   <p>• Processes ~100,000+ labeled heartbeat examples</p>
-                  <p>• Balanced dataset with equal class representation</p>
-                  <p>• Z-score normalized beat windows for stable training</p>
-                  <p>• 70/15/15% train/validation/test split</p>
-                  <p>• Model saved locally in browser IndexedDB</p>
+                  <p>• Balanced dataset with equal AAMI class representation</p>
+                  <p>• Z-score normalized 375ms beat windows</p>
+                  <p>• 70/15/15% train/validation/test data split</p>
+                  <p>• Adaptive learning rate with batch normalization</p>
+                  <p>• Model saved locally in browser IndexedDB storage</p>
+                </div>
+
+                {/* Beat Classification Mapping */}
+                <div className="space-y-1 text-xs text-gray-300 mb-2 bg-purple-500/10 border border-purple-500/20 rounded-lg p-2">
+                  <h4 className="font-bold text-purple-200 mb-1">AAMI Beat Classification:</h4>
+                  <p>• <span className="text-green-400">Normal:</span> N, L, R, e, j (sinus beats)</p>
+                  <p>• <span className="text-yellow-400">Supraventricular:</span> A, a, J, S (atrial)</p>
+                  <p>• <span className="text-red-400">Ventricular:</span> V, E, r (PVCs)</p>
+                  <p>• <span className="text-purple-400">Fusion:</span> F (mixed beats)</p>
+                  <p>• <span className="text-gray-400">Other:</span> Q, /, f, n (artifacts)</p>
                 </div>
               </div>
+
               <button
                 onClick={handleTrain}
                 disabled={isTraining}
@@ -112,15 +137,16 @@ export default function TrainPage() {
                 {isTraining ? (
                   <>
                     <div className="w-4 h-4 border-2 border-blue-300 border-t-transparent rounded-full animate-spin mr-2"></div>
-                    Training Model...
+                    Training 360Hz Model...
                   </>
                 ) : (
-                  modelExists ? 'Retrain Model (360Hz)' : 'Train New Model (360Hz)'
+                  modelExists ? 'Retrain 360Hz AAMI-5 Model' : 'Train New 360Hz AAMI-5 Model'
                 )}
               </button>
+
               {trainingComplete && (
                 <div className="mt-2 p-2 bg-green-500/10 border border-green-500/30 rounded-lg text-xs">
-                  <span className="text-green-400">✓ 360Hz model training completed successfully!</span>
+                  <span className="text-green-400">✓ 360Hz AAMI-5 model training completed successfully!</span>
                 </div>
               )}
               {error && (
@@ -132,33 +158,45 @@ export default function TrainPage() {
 
             {/* Training Logs */}
             <div className="bg-black/40 backdrop-blur-sm border border-white/20 rounded-xl p-3 flex flex-col h-[540px] md:h-[calc(100vh-7.5rem)]">
-              <h3 className="text-lg font-bold text-white mb-2">Training Progress</h3>
+              <h3 className="text-lg font-bold text-white mb-2">Training Progress & Logs</h3>
               <div className="bg-black/60 border border-white/10 rounded p-2 h-28 md:h-40 overflow-y-auto text-xs text-gray-200 font-mono whitespace-pre-line flex-1">
                 {logs.length === 0 && !isTraining && (
-                  <div className="text-gray-500 italic">Training logs will appear here...</div>
+                  <div className="text-gray-500 italic">Training logs will appear here when training starts...</div>
                 )}
                 {logs.map((log, idx) => (
                   <div key={idx} className={
                     log.includes('✅') ? 'text-green-400' :
                     log.includes('❌') ? 'text-red-400' :
                     log.includes('⚠️') ? 'text-yellow-400' :
-                    log.includes('Epoch') ? 'text-blue-300' :
+                    log.includes('📈') || log.includes('Epoch') ? 'text-blue-300' :
+                    log.includes('🚀') || log.includes('🔧') ? 'text-purple-300' :
+                    log.includes('📊') || log.includes('📁') ? 'text-cyan-300' :
                     'text-gray-200'
                   }>{log}</div>
                 ))}
                 <div ref={logsEndRef} />
               </div>
+
+              {/* Updated Training Process */}
               <div className="mt-2">
-                <h3 className="text-lg font-bold text-white mb-2">Training Process (360Hz)</h3>
+                <h3 className="text-lg font-bold text-white mb-2">Training Process (360Hz AAMI-5)</h3>
                 <ol className="list-decimal list-inside space-y-1 text-xs text-gray-300">
-                  <li>Load MIT-BIH ECG data at native 360Hz sampling rate</li>
-                  <li>Extract 135-sample beat windows around R-peaks (375ms)</li>
-                  <li>Apply Z-score normalization for stable training</li>
-                  <li>Balance dataset across 5 AAMI arrhythmia classes</li>
-                  <li>Train CNN model for 10 epochs with early stopping</li>
-                  <li>Evaluate performance with precision/recall metrics</li>
-                  <li>Save trained model to browser storage</li>
+                  <li>Load {allFilePairs.length} MIT-BIH ECG records at native 360Hz</li>
+                  <li>Extract {beatLength}-sample beat windows around R-peaks ({beatDurationMs}ms)</li>
+                  <li>Map beat annotations to AAMI 5-class standard</li>
+                  <li>Apply Z-score normalization for training stability</li>
+                  <li>Balance dataset across all 5 AAMI arrhythmia classes</li>
+                  <li>Train optimized CNN model for 10 epochs with validation</li>
+                  <li>Evaluate performance with class-specific metrics</li>
+                  <li>Save trained model to browser IndexedDB storage</li>
                 </ol>
+                
+                <div className="mt-2 p-2 bg-gray-800/30 border border-gray-700/50 rounded text-xs">
+                  <p className="text-gray-400">
+                    <strong>Note:</strong> This updated model uses native 360Hz sampling with 135-sample windows, 
+                    optimized for real-time ECG analysis with improved accuracy for arrhythmia detection.
+                  </p>
+                </div>
               </div>
             </div>
 
