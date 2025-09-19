@@ -5,7 +5,7 @@ import { ModelProvider } from "@/providers/ModelProvider";
 import NavBar from '@/components/NavBar';
 
 export const metadata: Metadata = {
-  title: "ECG Monitor",
+  title: "Rpeak",
   description: "ECG monitoring and analysis with AI",
 };
 

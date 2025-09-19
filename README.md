@@ -134,7 +134,7 @@ Click sidebar buttons to activate different analysis tools:
 ```
 src/
 ├── app/
-│   ├── page.tsx              # Main ECG monitor interface
+│   ├── page.tsx              # Main application interface
 │   ├── train/page.tsx        # AI model training
 │   ├── docs/page.tsx         # User documentation
 │   └── layout.tsx            # App layout and navigation

@@ -511,68 +511,250 @@ export default function EcgFullPanel() {
         }
     }
 
-    // 1. Fix: AI panel not updating (batchResult never set if BATCH_SIZE not reached)
-    // Solution: If there are any predictions, show the latest even if < BATCH_SIZE
+    // Replace your existing adaptSignalForModel function with this enhanced version:
 
-    const analyzeCurrent = async () => {
-        console.log("analyzeCurrent called");
-        if (!ecgModel) {
-            console.log("No model loaded");
+const adaptSignalForModel = (ecgWindow: number[]): number[] => {
+    // Step 1: Remove device-specific DC offset
+    const mean = ecgWindow.reduce((a, b) => a + b, 0) / ecgWindow.length;
+    const centeredSignal = ecgWindow.map(x => x - mean);
+    
+    // Step 2: Detect R-peak in the window (should be near center)
+    const centerIdx = Math.floor(ecgWindow.length / 2);
+    const searchRange = 30; // Increased search range from 25 to 30
+    
+    let maxIdx = centerIdx;
+    let maxValue = centeredSignal[centerIdx];
+    
+    for (let i = Math.max(0, centerIdx - searchRange); 
+         i < Math.min(ecgWindow.length, centerIdx + searchRange); 
+         i++) {
+        if (Math.abs(centeredSignal[i]) > Math.abs(maxValue)) {
+            maxValue = centeredSignal[i];
+            maxIdx = i;
+        }
+    }
+    
+    // Step 3: Enhanced polarity detection for consumer devices
+    let needsFlip = false;
+    
+    // Method 1: Check if the detected R-peak is negative
+    if (maxValue < 0) {
+        needsFlip = true;
+        console.log("Detected negative R-peak, flipping signal polarity");
+    }
+    
+    // Method 2: Check overall signal polarity by examining the peak region
+    const peakRegionStart = Math.max(0, maxIdx - 15);
+    const peakRegionEnd = Math.min(centeredSignal.length, maxIdx + 15);
+    const peakRegion = centeredSignal.slice(peakRegionStart, peakRegionEnd);
+    const peakRegionMean = peakRegion.reduce((a, b) => a + b, 0) / peakRegion.length;
+    
+    if (peakRegionMean < -0.05) {  // Reduced threshold from -0.1
+        needsFlip = true;
+        console.log("Detected negative peak region, flipping signal polarity");
+    }
+    
+    // Apply polarity correction
+    const polarityCorrectedSignal = needsFlip ? 
+        centeredSignal.map(x => -x) : 
+        centeredSignal;
+    
+    // Step 4: More forgiving amplitude scaling
+    const rPeakValue = Math.abs(polarityCorrectedSignal[maxIdx]);
+    
+    // Calculate signal variance to determine scaling approach
+    const variance = polarityCorrectedSignal.reduce((sum, val) => sum + val * val, 0) / polarityCorrectedSignal.length;
+    
+    let scaleFactor;
+    if (variance > 0.03) {  // Reduced from 0.05
+        // High variance signal - scale more conservatively
+        scaleFactor = rPeakValue > 0 ? 0.7 / rPeakValue : 1.0;  // Increased from 0.6
+    } else {
+        // Low variance signal - scale more aggressively to match MIT-BIH
+        scaleFactor = rPeakValue > 0 ? 1.0 / rPeakValue : 1.0;  // Reduced from 1.2
+    }
+    
+    // Apply scaling with MIT-BIH-like amplitude (increased from 0.6 to 0.7)
+    const scaledSignal = polarityCorrectedSignal.map(x => x * scaleFactor * 0.7);
+    
+    // Step 5: Apply mild smoothing to reduce high-frequency noise
+    const smoothedSignal = scaledSignal.map((val, idx) => {
+        if (idx === 0 || idx === scaledSignal.length - 1) return val;
+        return (scaledSignal[idx - 1] + val * 2 + scaledSignal[idx + 1]) / 4;
+    });
+    
+    console.log(`Enhanced signal adaptation: R-peak at ${maxIdx}, original ${maxValue.toFixed(4)}, ` +
+                `flipped: ${needsFlip}, final R-peak: ${smoothedSignal[maxIdx].toFixed(4)}, scale: ${scaleFactor.toFixed(4)}`);
+    
+    return smoothedSignal;
+};
+
+    // Now replace your existing analyzeCurrent function with this updated version:
+   // Update the R-R interval filtering to be less strict
+const analyzeCurrent = async () => {
+    console.log("analyzeCurrent called - AI Analysis triggered");
+    if (!ecgModel) {
+        console.log("No model loaded");
+        setModelPrediction({ prediction: "Analyzing", confidence: 0 });
+        return;
+    }
+
+    // Check signal quality FIRST
+    const maxAbs = Math.max(...dataCh0.current.map(Math.abs));
+    const variance = dataCh0.current.reduce((sum, val) => sum + Math.pow(val, 2), 0) / dataCh0.current.length;
+    
+    console.log(`Signal quality check - maxAbs: ${maxAbs.toFixed(4)}, variance: ${variance.toFixed(6)}`);
+    
+    // RELAXED signal quality requirements for consumer devices
+    if (maxAbs < 0.1 || variance < 0.005) {  // Reduced from 0.2 and 0.01
+        console.log("Signal too weak for reliable AI analysis");
+        setModelPrediction({ prediction: "Poor Signal", confidence: 0 });
+        return;
+    }
+
+    // Use the same peak detection pipeline as your main application
+    const detectedPeaks = panTompkins.current.detectQRS(dataCh0.current);
+    
+    // If Pan-Tompkins fails, use backup method
+    const recentPeaks = detectedPeaks.length > 0 
+        ? detectedPeaks 
+        : bpmCalculator.current.detectPeaks(dataCh0.current);
+    
+    // RELAXED: More forgiving filtering for consumer ECG devices
+    const filteredPeaks = recentPeaks.filter((peak, index) => {
+        if (index === 0) return true;
+        const timeDiff = (peak - recentPeaks[index - 1]) / SAMPLE_RATE * 1000;
+        // Expanded range: 300-1500ms (40-200 BPM range) - your suggestion
+        return timeDiff >= 300 && timeDiff <= 1500;
+    });
+
+    if (filteredPeaks.length === 0) {
+        console.log("No valid R-peaks after filtering");
+        setModelPrediction({ prediction: "No Valid Beats", confidence: 0 });
+        return;
+    }
+
+    console.log("Using R-peaks for AI analysis:", filteredPeaks);
+
+    // Get the most recent R-peak
+    const latestRPeak = filteredPeaks[filteredPeaks.length - 1];
+    const halfBeat = Math.floor(MODEL_INPUT_LENGTH / 2); // 67 samples
+
+    console.log(`Extracting beat around R-peak at index ${latestRPeak}`);
+
+    // FIXED: Better circular buffer handling
+    let ecgWindow: number[] = [];
+    const startIdx = latestRPeak - halfBeat;
+
+    // Create a properly ordered window
+    for (let i = 0; i < MODEL_INPUT_LENGTH; i++) {
+        const actualIdx = (startIdx + i + NUM_POINTS) % NUM_POINTS;
+        ecgWindow.push(dataCh0.current[actualIdx]);
+    }
+
+    console.log("ECG window extracted successfully, length:", ecgWindow.length);
+    console.log("Raw window sample values (first 10):", ecgWindow.slice(0, 10));
+
+    // CRITICAL: Adapt signal to match training data characteristics
+    const adaptedSignal = adaptSignalForModel(ecgWindow);
+    
+    // Now apply z-score normalization to adapted signal
+    const windowMean = adaptedSignal.reduce((a, b) => a + b, 0) / adaptedSignal.length;
+    const windowStd = Math.sqrt(adaptedSignal.reduce((a, b) => a + (b - windowMean) ** 2, 0) / adaptedSignal.length);
+    
+    // RELAXED variance threshold for consumer devices
+    if (windowStd < 0.005) {  // Reduced from 0.01
+        console.log("Adapted signal too flat for analysis, std:", windowStd);
+        setModelPrediction({ prediction: "Flat Signal", confidence: 0 });
+        return;
+    }
+    
+    const normWindow = adaptedSignal.map(x => (x - windowMean) / windowStd);
+    
+    console.log("Adapted signal (first 10):", adaptedSignal.slice(0, 10));
+    console.log("Final normalized window (first 10):", normWindow.slice(0, 10));
+    
+    // Validate normalized data
+    const normMean = normWindow.reduce((a, b) => a + b, 0) / normWindow.length;
+    const normStd = Math.sqrt(normWindow.reduce((a, b) => a + (b - normMean) ** 2, 0) / normWindow.length);
+    
+    console.log("Normalization check - mean:", normMean.toFixed(4), "std:", normStd.toFixed(4));
+    
+    // More lenient validation for consumer devices
+    if (Math.abs(normMean) > 0.3) {  // Increased from 0.2
+        console.log("Beat normalization failed - mean too far from zero:", normMean);
+        setModelPrediction({ prediction: "Normalization Failed", confidence: 0 });
+        return;
+    }
+
+    // Create input tensor with correct shape [1, 135, 1]
+    const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_INPUT_LENGTH, 1]);
+    console.log("Input tensor shape:", inputTensor.shape);
+
+    try {
+        const outputTensor = ecgModel.predict(inputTensor) as tf.Tensor;
+        const probabilities = await outputTensor.data();
+
+        console.log("Model prediction completed, probabilities:", Array.from(probabilities));
+
+        if (!probabilities || probabilities.length === 0) {
+            console.error("Model output is empty or invalid");
+            setModelPrediction({ prediction: "Model Error", confidence: 0 });
+            inputTensor.dispose();
             return;
         }
 
-        // For 1000 points buffer, get the last MODEL_INPUT_LENGTH samples for prediction
-        let ecgWindow: number[];
-
-        if (sampleIndex.current >= MODEL_INPUT_LENGTH) {
-            // Normal case: get the most recent samples
-            ecgWindow = dataCh0.current.slice(sampleIndex.current - MODEL_INPUT_LENGTH, sampleIndex.current);
-        } else {
-            // Wraparound case: need to get data from end of buffer and beginning
-            const fromEnd = dataCh0.current.slice(NUM_POINTS - (MODEL_INPUT_LENGTH - sampleIndex.current));
-            const fromStart = dataCh0.current.slice(0, sampleIndex.current);
-            ecgWindow = [...fromEnd, ...fromStart];
-        }
-
-        if (ecgWindow.length < MODEL_INPUT_LENGTH) {
-          
-            return;
-        }
-
-        const normWindow = zscoreNorm(ecgWindow);
-        const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_INPUT_LENGTH, 1]);
+        const predArray = Array.from(probabilities);
         
+        // REBALANCED: Less aggressive bias correction as you suggested
+        const deviceBiasCorrection = [
+            1.4,  // Normal: moderate boost (reduced from 1.8)
+            0.9,  // Supraventricular: mild reduction (increased from 0.7)
+            1.0,  // Ventricular: no change
+            0.8,  // Fusion: mild reduction (increased from 0.6)
+            0.7   // Other: mild reduction (increased from 0.5)
+        ];
+        
+        const correctedProbs = predArray.map((prob, idx) => prob * deviceBiasCorrection[idx]);
+        const correctedSum = correctedProbs.reduce((a, b) => a + b, 0);
+        const normalizedProbs = correctedProbs.map(p => p / correctedSum);
+        
+        console.log("Original probabilities:", predArray.map((p, i) => `${classLabels[i]}: ${(p*100).toFixed(1)}%`));
+        console.log("Rebalanced bias-corrected probabilities:", normalizedProbs.map((p, i) => `${classLabels[i]}: ${(p*100).toFixed(1)}%`));
+        
+        const maxIndex = normalizedProbs.indexOf(Math.max(...normalizedProbs));
+        const confidence = normalizedProbs[maxIndex] * 100;
+        
+        console.log("Final prediction details - maxIndex:", maxIndex, "confidence:", confidence.toFixed(1), "%");
+        console.log("Class labels:", classLabels);
+        
+        // Slightly reduced confidence threshold
+        if (confidence < 40) {  // Reduced from 45
+            console.log(`Low confidence prediction: ${confidence}%`);
+            setModelPrediction({ prediction: "Uncertain", confidence });
+            inputTensor.dispose();
+            outputTensor.dispose();
+            return;
+        }
 
-        try {
-            const outputTensor = ecgModel.predict(inputTensor) as tf.Tensor;
-           
-            const probabilities = await outputTensor.data();
-         
+        if (maxIndex < 0 || maxIndex >= classLabels.length) {
+            console.error("Max index out of bounds for classLabels");
+            setModelPrediction({ prediction: "Classification Error", confidence: 0 });
+            inputTensor.dispose();
+            outputTensor.dispose();
+            return;
+        }
 
-            if (!probabilities || probabilities.length === 0) {
-              
-                setModelPrediction({ prediction: "Analyzing", confidence: 0 });
-                return;
-            }
+        const predictedClass = classLabels[maxIndex];
+        console.log("Final prediction:", predictedClass, "with confidence:", confidence.toFixed(1), "%");
 
-            const predArray = Array.from(probabilities);
-            const maxIndex = predArray.indexOf(Math.max(...predArray));
-          
+        setModelPrediction({
+            prediction: predictedClass,
+            confidence: confidence
+        });
 
-            if (maxIndex < 0 || maxIndex >= classLabels.length) {
-            
-                setModelPrediction({ prediction: "Analyzing", confidence: 0 });
-                return;
-            }
-
-            const predictedClass = classLabels[maxIndex];
-            const confidence = predArray[maxIndex] * 100;
-
-            setModelPrediction({
-                prediction: predictedClass,
-                confidence: confidence
-            });
-
+        // RAISED confidence floor for rolling analysis as you suggested
+        if (confidence >= 60) {  // REDUCED from 70 to 60
             setBeatPredictions(prev => {
                 const updated = [...prev, { prediction: predictedClass, confidence }];
                 const rolling = updated.slice(-BATCH_SIZE);
@@ -583,17 +765,22 @@ export default function EcgFullPanel() {
                         summary,
                         latest: rolling[rolling.length - 1]
                     });
+                    console.log("Batch result updated with", rolling.length, "medium+ confidence predictions");
                 }
                 return rolling;
             });
-
-            inputTensor.dispose();
-            outputTensor.dispose();
-        } catch (err) {
-            console.error('Prediction failed:', err);
-            setModelPrediction({ prediction: "Analyzing", confidence: 0 });
+        } else {
+            console.log(`Lower confidence (${confidence.toFixed(1)}%) - not adding to rolling analysis`);
         }
-    };
+
+        inputTensor.dispose();
+        outputTensor.dispose();
+    } catch (err) {
+        console.error('Prediction failed:', err);
+        setModelPrediction({ prediction: "Prediction Error", confidence: 0 });
+        inputTensor.dispose();
+    }
+};
 
     // Add this to keep PQRST labels moving with the wave
     useEffect(() => {
@@ -722,7 +909,7 @@ export default function EcgFullPanel() {
 
         // Create CSV content
         let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "ECG Monitor Summary Report\n";
+        csvContent += "ECG Summary Report\n";
         csvContent += `Generated on,${new Date().toLocaleString()}\n`;
         csvContent += `Sampling Rate,${SAMPLE_RATE} Hz\n`;
         csvContent += `Model Input Length,${MODEL_INPUT_LENGTH} samples\n\n`;
@@ -809,20 +996,24 @@ export default function EcgFullPanel() {
     // Effect to run analyzeCurrent automatically when panel is visible
     useEffect(() => {
         if (!showAIAnalysis) return;
-        if (!modelLoaded || !ecgIntervals) return;
+        if (!modelLoaded || !connected) return; // Changed from ecgIntervals to connected
 
-        // Run initial analysis
+        console.log("AI Analysis panel opened - starting analysis");
+        
+        // Run initial analysis immediately
         analyzeCurrent();
 
-        // Set up auto-refresh
+        // Set up auto-refresh every 3 seconds
         const interval = setInterval(() => {
+            console.log("Auto-analysis trigger");
             analyzeCurrent();
-        }, 10000); // Run every 10 seconds
+        }, 3000); // Reduced from 10 seconds to 3 seconds
 
-        return () => clearInterval(interval);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showAIAnalysis, modelLoaded, ecgIntervals]);
-
+        return () => {
+            console.log("AI Analysis panel closed - stopping analysis");
+            clearInterval(interval);
+        };
+    }, [showAIAnalysis, modelLoaded, connected]); // Removed ecgIntervals dependency
 
 
     // Initialize the session analyzer with model
@@ -923,7 +1114,7 @@ export default function EcgFullPanel() {
 
         // Create CSV content
         let csvContent = "data:text/csv;charset=utf-8,";
-        csvContent += "ECG Monitor Session Report\n";
+        csvContent += "ECG Summary Report\n";
         csvContent += `Generated on,${new Date().toLocaleString()}\n\n`;
 
         // Add patient info
@@ -1385,132 +1576,86 @@ export default function EcgFullPanel() {
             )}
 
             {/* AI Prediction Results Panel */}
-            {showAIAnalysis && (
-                <div className="absolute right-4 top-[calc(40%+40px)] transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-bold flex items-center gap-2">
-                            <Zap className="w-5 h-5 text-yellow-400" />
-                            AI Analysis
-                        </h3>
-                        <button
-                            onClick={() => setShowAIAnalysis(false)}
-                            className="text-gray-400 hover:text-white"
-                        >
-                            ✕
-                        </button>
-                    </div>
+            {/* AI Prediction Results Panel */}
+{showAIAnalysis && (
+    <div className="absolute right-4 top-[calc(40%+40px)] transform -translate-y-1/2 w-96 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-40">
+        <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-400" />
+                AI Beat Classification
+            </h3>
+            <button
+                onClick={() => setShowAIAnalysis(false)}
+                className="text-gray-400 hover:text-white"
+            >
+                ✕
+            </button>
+        </div>
 
-                    {/* Development Phase Disclaimer */}
-                    <div className="mb-4 p-3 rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-400">
-                        <div className="flex items-start gap-2">
-                            <span className="text-lg">🚧</span>
-                            <div>
-                                <div className="text-sm font-semibold mb-1">Development Phase Notice</div>
-                                <div className="text-xs text-orange-300">
-                                    The AI feature is currently in testing and development phase. Results may not be accurate or reliable.
-                                    We will inform you as soon as this feature is fully operational and validated.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {batchResult && batchResult.summary ? (
-                        // ...existing summary rendering...
-                        // (no change needed here)
-                        (() => {
-                            const summary = batchResult.summary;
-                            const isOther = summary.majorityClass === "Other" || summary.majorityClass === "unknown";
-                            const otherFraction =
-                                (summary.counts["Other"] || 0) / summary.total > 0.5 ||
-                                (summary.counts["unknown"] || 0) / summary.total > 0.5;
-
-                            if (isOther || otherFraction) {
-                                return (
-                                    <div className="mb-4 p-3 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 text-center font-semibold">
-                                        <div className="text-lg mb-1">⚠️ Poor Signal or Unclassified Beats</div>
-                                        <div className="text-sm mb-2">
-                                            Most recent heartbeats could not be classified.<br />
-                                            Please check electrode contact, reduce movement, and ensure good skin contact.
-                                        </div>
-                                        <div className="text-xs text-gray-400">
-                                            Reliable rolling analysis is not possible until signal quality improves.
-                                        </div>
-                                    </div>
-                                );
-                            }
-
-                            const details = predictionDetails[summary.majorityClass] || predictionDetails["Other"];
-                            return (
-                                <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
-                                    <div className="flex items-center justify-between mb-1">
-                                        <span className="text-sm text-gray-300">Rolling Summary ({summary.total} beats):</span>
-                                        <span className="font-bold text-lg" style={{
-                                            color:
-                                                summary.majorityClass === "Normal" ? "#22c55e" :
-                                                    summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                                        }}>
-                                            {details.label}
-                                        </span>
-                                    </div>
-                                    <div className="text-xs text-gray-400 mb-1">
-                                        {details.description}
-                                    </div>
-                                    <div className="text-xs text-gray-500 mb-2">
-                                        Symbols: <span className="font-mono">{details.symbols.join(", ")}</span>
-                                    </div>
-                                    <div className="w-full bg-gray-700 rounded-full h-1.5 mb-2">
-                                        <div
-                                            className="h-1.5 rounded-full"
-                                            style={{
-                                                width: `${summary.majorityPercent}%`,
-                                                backgroundColor:
-                                                    summary.majorityClass === "Normal" ? "#22c55e" :
-                                                        summary.majorityClass === "Analyzing" ? "#94a3b8" : "#ef4444"
-                                            }}
-                                        ></div>
-                                    </div>
-                                    <p className="text-xs text-gray-400 mt-1">
-                                        {summary.majorityPercent.toFixed(1)}% {details.label} in last {summary.total} beats.
-                                    </p>
-                                    <ul className="mt-2 text-xs text-gray-300">
-                                        {Object.entries(summary.counts).map(([cls, cnt]) => {
-                                            const d = predictionDetails[cls] || predictionDetails["Other"];
-                                            return (
-                                                <li key={cls}>
-                                                    {d.label}: {cnt} ({((cnt / summary.total) * 100).toFixed(1)}%)
-                                                    <span className="text-gray-500 ml-2">[{d.symbols.join(", ")}]</span>
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                    {summary.majorityClass !== "Normal" && summary.majorityPercent > 30 && (
-                                        <div className="mt-2 p-2 rounded bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
-                                            Warning: Abnormal rhythm detected!
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })()
-                    ) : (
-                        <div className="mb-4 p-3 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 text-center font-semibold">
-                            <div className="text-lg mb-1">No AI analysis yet</div>
-                            <div className="text-sm">
-                                {!modelLoaded
-                                    ? "AI model not loaded. Please wait or check your connection."
-                                    : !connected
-                                        ? "Device not connected. Connect to start AI analysis."
-                                        : "Waiting for predictions..."}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Enhanced disclaimer */}
-                    <div className="mt-4 text-xs text-gray-300 italic border-t border-gray-700 pt-3">
-                        <div className="mb-1">⚠️ <strong>Important:</strong> This is not a diagnostic tool.</div>
-                        <div>Features are currently experimental and under development.</div>
-                    </div>
+        {/* Real-time Analysis Status */}
+        <div className="mb-3 p-2 rounded-lg border border-blue-500/30 bg-blue-500/10">
+            <div className="flex items-center justify-between text-sm">
+                <span className="text-blue-400">Analysis Status:</span>
+                <span className={`font-semibold ${modelLoaded && connected ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {modelLoaded && connected ? '🟢 Active (3s refresh)' : 
+                     modelLoaded ? '🟡 Ready (connect device)' : '🔴 Loading model...'}
+                </span>
+            </div>
+            {modelLoaded && connected && (
+                <div className="text-xs text-blue-300 mt-1">
+                    Enhanced signal adaptation & bias correction enabled
                 </div>
             )}
+        </div>
+
+        {/* Current Beat Analysis */}
+        {modelPrediction && (
+            <div className="mb-4 p-3 rounded-lg border border-white/20 bg-black/40">
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-gray-300">Latest Beat:</span>
+                    <span className={`font-bold text-lg ${
+                        modelPrediction.prediction === "Normal" ? 'text-green-400' :
+                        modelPrediction.prediction === "Uncertain" || modelPrediction.prediction === "Poor Signal" ? 'text-yellow-400' :
+                        modelPrediction.prediction.includes("Error") ? 'text-red-400' : 'text-orange-400'
+                    }`}>
+                        {modelPrediction.prediction}
+                    </span>
+                </div>
+                
+                {modelPrediction.confidence > 0 && (
+                    <>
+                        <div className="w-full bg-gray-700 rounded-full h-2 mb-2">
+                            <div
+                                className="h-2 rounded-full transition-all duration-300"
+                                style={{
+                                    width: `${modelPrediction.confidence}%`,
+                                    backgroundColor: 
+                                        modelPrediction.confidence >= 80 ? '#22c55e' :
+                                        modelPrediction.confidence >= 60 ? '#eab308' : '#ef4444'
+                                }}
+                            ></div>
+                        </div>
+                        <div className="text-xs text-gray-400">
+                            Confidence: {modelPrediction.confidence.toFixed(1)}%
+                            {modelPrediction.confidence >= 70 && <span className="text-green-400 ml-2">✓ High</span>}
+                            {modelPrediction.confidence >= 45 && modelPrediction.confidence < 70 && <span className="text-yellow-400 ml-2">~ Medium</span>}
+                            {modelPrediction.confidence < 45 && <span className="text-red-400 ml-2">⚠ Low</span>}
+                        </div>
+                    </>
+                )}
+            </div>
+        )}
+
+
+        {/* Enhanced disclaimer */}
+        <div className="mt-3 text-xs text-gray-300 italic border-t border-gray-700 pt-3">
+            <div className="mb-1">⚠️ <strong>Medical Disclaimer:</strong> This is not a diagnostic device.</div>
+            <div className="text-gray-400">
+                AI predictions are experimental and should not replace professional medical evaluation.
+            </div>
+        </div>
+    </div>
+)}
 
             {/* ECG Intervals Panel */}
             {showIntervals && (
