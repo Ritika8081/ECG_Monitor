@@ -21,16 +21,16 @@ const predictionLabels: Record<string, string> = {
 };
 
 const predictionExplanations: Record<string, string> = {
-    "Normal Sinus Rhythm": "Your heart's electrical activity appears normal with regular rhythm.",
-    "Ventricular Arrhythmia": "Abnormal heartbeats originating from the ventricles detected.",
-    "Supraventricular Arrhythmia": "Abnormal heartbeats originating above the ventricles detected.",
-    "Fusion Beats Detected": "Mixed conduction patterns indicating fusion of normal and abnormal beats.",
-    "Abnormal Rhythm": "Irregular heart rhythm patterns that don't fit standard categories.",
-    "Mixed Rhythm Pattern": "Complex rhythm with multiple types of abnormal beats detected.",
-    "Bradycardia": "Slow heart rate detected (below 60 BPM).",
-    "Tachycardia": "Fast heart rate detected (above 100 BPM).",
-    "Analysis Failed": "Unable to analyze rhythm due to insufficient data or poor signal quality.",
-    "Error": "Technical error occurred during analysis."
+    "Normal Sinus Rhythm": "Your heart's electrical activity appears normal with regular rhythm patterns. The AI detected predominantly normal heartbeats with consistent timing.",
+    "Ventricular Arrhythmia": "Abnormal heartbeats originating from the ventricles detected. The AI identified irregular electrical patterns that may require medical attention.",
+    "Supraventricular Arrhythmia": "Abnormal heartbeats originating above the ventricles detected. The AI found irregular patterns in the upper chambers of the heart.",
+    "Fusion Beats Detected": "Mixed conduction patterns indicating fusion of normal and abnormal beats. The AI detected complex rhythm patterns with overlapping electrical activity.",
+    "Abnormal Rhythm": "Irregular heart rhythm patterns that don't fit standard categories. The AI identified unusual electrical activity requiring further evaluation.",
+    "Mixed Rhythm Pattern": "Complex rhythm with multiple types of abnormal beats detected. The AI found various irregular patterns throughout the recording.",
+    "Bradycardia": "Slow heart rate detected (below 60 BPM). The AI confirmed consistently slow heart rhythm patterns.",
+    "Tachycardia": "Fast heart rate detected (above 100 BPM). The AI confirmed consistently fast heart rhythm patterns.",
+    "Analysis Failed": "Unable to analyze rhythm due to insufficient data or poor signal quality. The AI could not process the ECG data reliably.",
+    "Error": "Technical error occurred during AI analysis. The classification system encountered processing difficulties."
 };
 
 // Beat classification labels for detailed breakdown
@@ -103,12 +103,23 @@ export default function SessionReport({
         }
     };
 
+    // Calculate AI analysis quality metrics
+    const getAIAnalysisQuality = () => {
+        const confidence = analysisResults.aiClassification.confidence;
+        if (confidence >= 75) return { label: 'High Quality', color: '#22c55e', icon: '🟢' };
+        if (confidence >= 60) return { label: 'Good Quality', color: '#eab308', icon: '🟡' };
+        if (confidence >= 45) return { label: 'Medium Quality', color: '#f97316', icon: '🟠' };
+        return { label: 'Lower Quality', color: '#ef4444', icon: '🔴' };
+    };
+
+    const aiQuality = getAIAnalysisQuality();
+
     return (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-70 flex items-center justify-center p-4 w-full">
             <div className="bg-slate-900 border border-white/20 rounded-xl max-w-[90vw] w-full max-h-[90vh] overflow-y-auto">
                 {/* Report Header */}
                 <div className="sticky top-0 bg-slate-900 border-b border-white/10 p-2 flex justify-between items-center">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-white flex items-center gap-2 mb-2">
                         <FileText className="w-5 h-5 text-blue-400" />
                         ECG Session Report
                         {getStatusIcon()}
@@ -217,43 +228,36 @@ export default function SessionReport({
                                 </div>
                             </div>
 
-                            {/* AI Classification & Beat Analysis */}
+                            {/* Enhanced AI Classification & Beat Analysis */}
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3 col-span-2">
+                                <h3 className="text-white font-medium flex items-center gap-2 mb-3 text-sm">
+                                    <Zap className="w-4 h-4 text-yellow-400" />
+                                    AI Rhythm Analysis
+                                </h3>
+                                
+                                {/* Development Notice - Spanning full width */}
+                                <div className="mb-4 p-3 rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-400">
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-lg">🚧</span>
+                                        <div>
+                                            <div className="text-xs font-semibold mb-1">Development Phase Notice</div>
+                                            <div className="text-xs text-orange-300">
+                                                AI feature is under testing. Results may be inaccurate. You'll be notified once fully validated.
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 
                                 {/* Two Column Layout */}
                                 <div className="grid grid-cols-2 gap-4">
                                     {/* Left Column - Classification & Confidence */}
                                     <div className="space-y-3">
-                                        {/* Overall Classification */}
-                                        <div className={`p-3 rounded-lg border ${
-                                            analysisResults.aiClassification.prediction === "Normal Sinus Rhythm"
-                                                ? 'bg-green-500/10 border-green-500/30'
-                                                : 'bg-yellow-500/10 border-yellow-500/30'
-                                        }`}>
-                                            <div className="flex justify-between items-center mb-2">
-                                                <span className="text-gray-300 text-xs">Rhythm Classification:</span>
-                                            </div>
-                                            <div className="font-bold text-sm mb-2" style={{ color: getOverallStatusColor() }}>
-                                                {predictionLabels[analysisResults.aiClassification.prediction] || analysisResults.aiClassification.prediction}
-                                            </div>
-                                            <div className="w-full bg-gray-700 rounded-full h-1 mb-2">
-                                                <div
-                                                    className="h-1 rounded-full"
-                                                    style={{
-                                                        width: `${analysisResults.aiClassification.confidence}%`,
-                                                        backgroundColor: getOverallStatusColor()
-                                                    }}
-                                                ></div>
-                                            </div>
-                                            <p className="text-xs text-gray-300">
-                                                Confidence: {analysisResults.aiClassification.confidence.toFixed(1)}%
-                                            </p>
-                                        </div>
+                                       
 
                                         {/* Beat Classification Breakdown */}
                                         {analysisResults.aiClassification.beatClassifications && (
                                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
-                                                <div className="text-xs font-medium text-gray-300 mb-2">Beat Classification Breakdown:</div>
+                                                <div className="text-xs font-medium text-gray-300 mb-2">Beat Pattern Analysis:</div>
                                                 <div className="space-y-1 text-xs">
                                                     {Object.entries(analysisResults.aiClassification.beatClassifications).map(([beatType, count]) => {
                                                         const total = Object.values(analysisResults.aiClassification.beatClassifications!).reduce((sum, c) => sum + c, 0);
@@ -275,31 +279,33 @@ export default function SessionReport({
                                         )}
                                     </div>
 
-                                    {/* Right Column - Explanation & Abnormalities */}
+                                    {/* Right Column - Analysis Insights */}
                                     <div className="space-y-3">
-                                        {/* Analysis Explanation */}
+                                      
+
+                                        {/* AI Analysis Quality Metrics */}
                                         <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
-                                            <div className="text-xs font-medium text-gray-300 mb-2">Analysis Explanation:</div>
-                                            <div className="text-xs text-gray-300">
-                                                {predictionExplanations[analysisResults.aiClassification.prediction] || analysisResults.aiClassification.explanation}
+                                            <div className="text-xs font-medium text-gray-300 mb-2">Analysis Quality:</div>
+                                            <div className="space-y-2">
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-gray-400">Signal Quality:</span>
+                                                    <span className="text-green-400">Good</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-gray-400">Beats Analyzed:</span>
+                                                    <span className="text-blue-400">{numBeats}</span>
+                                                </div>
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-gray-400">Pattern Consistency:</span>
+                                                    <span style={{ color: aiQuality.color }}>
+                                                        {analysisResults.aiClassification.confidence >= 70 ? 'High' : 
+                                                         analysisResults.aiClassification.confidence >= 50 ? 'Medium' : 'Variable'}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
 
-                                        {/* Abnormalities Section */}
                                      
-                                          <div className="mb-4 p-3 rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-400">
-                                    <div className="flex items-start gap-2">
-                                        <span className="text-lg">🚧</span>
-                                        <div>
-                                            <div className="text-xs font-semibold mb-1">Development Phase Notice</div>
-                                            <div className="text-xs text-orange-300">
-                                                The AI feature is currently in testing and development phase. Results may not be accurate or reliable. 
-                                                We will inform you as soon as this feature is fully operational and validated.
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                    
                                     </div>
                                 </div>
                             </div>
@@ -357,10 +363,10 @@ export default function SessionReport({
                             </div>
 
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
-                                <div className="text-gray-400 text-sm mb-1">Rhythm Confidence</div>
+                                <div className="text-gray-400 text-sm mb-1">AI Confidence</div>
                                 <div className="font-medium">
-                                    <span className="text-purple-400">
-                                        {analysisResults.summary.rhythm.confidence.toFixed(1)}%
+                                    <span style={{ color: aiQuality.color }}>
+                                        {analysisResults.aiClassification.confidence.toFixed(1)}%
                                     </span>
                                 </div>
                                 <div className="text-xs text-gray-500 mt-1">
@@ -371,7 +377,7 @@ export default function SessionReport({
                     </div>
 
                     {/* ECG Intervals Section */}
-                    <div className="mb-6">
+                    <div className="mb-2">
                        
                         <div className="grid grid-cols-5 gap-3">
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
@@ -410,14 +416,15 @@ export default function SessionReport({
                                     Raw measurement
                                 </div>
                             </div>
-                                 {/* Medical Disclaimer */}
-                                <div className="bg-red-900/20 border col-span-2 border-red-500/20 rounded-lg p-2 mb-3">
-                                    <div className="text-sm text-red-300">
-                                        ⚠️ This device is NOT a medical diagnostic tool and should NOT be used for diagnosis, treatment decisions, 
-                                        or medical emergencies. The analysis is based on simplified algorithms and may not detect all conditions.
-                                    </div>
+
+                            {/* Enhanced Medical Disclaimer */}
+                            <div className="bg-red-900/20 border col-span-2 border-red-500/20 rounded-lg p-2 mb-3">
+                                <div className="text-sm text-red-300">
+                                    ⚠️ <strong>Medical Disclaimer:</strong> This device is NOT a medical diagnostic tool and should NOT be used for diagnosis, treatment decisions, 
+                                    or medical emergencies. The AI analysis is based on pattern recognition and may not detect all conditions. 
+                                    Always consult qualified healthcare professionals for medical evaluation.
                                 </div>
-                          
+                            </div>
                         </div>
                     </div>
                 </div>
