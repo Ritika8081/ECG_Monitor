@@ -11,7 +11,7 @@ export class BPMCalculator {
   private minDistance: number;
 
   constructor(
-    sampleRate: number = 360, // Updated default from 500 to 360
+    sampleRate: number = 360,
     windowSize: number = 5,
     minBPM: number = 40,
     maxBPM: number = 200
@@ -38,7 +38,6 @@ export class BPMCalculator {
     const top5Percent = sortedAmplitudes.slice(0, Math.floor(dataLength * 0.05));
 
     // Use a higher threshold - 50% of the average of top 5% amplitudes
-    // This ensures we only get the true R peaks
     const dynamicThreshold =
       top5Percent.length > 0
         ? (top5Percent.reduce((sum, val) => sum + val, 0) / top5Percent.length) * 0.5
@@ -72,11 +71,13 @@ export class BPMCalculator {
     }
 
     // Further filtering - keep only the highest peaks if there are too many
-    if (peaks.length > 20) {
+    // Adjusted for 1000 points buffer
+    const maxPeaksFor1000Points = Math.floor(1000 / (this.sampleRate * 0.6)); // ~5 peaks max for 1000 points
+    if (peaks.length > maxPeaksFor1000Points) {
       // Sort peaks by amplitude
       const peaksByAmplitude = [...peaks].sort((a, b) => data[b] - data[a]);
       // Keep only the top peaks
-      const topPeaks = peaksByAmplitude.slice(0, 20);
+      const topPeaks = peaksByAmplitude.slice(0, maxPeaksFor1000Points);
       // Re-sort by position
       peaks.length = 0;
       peaks.push(...topPeaks.sort((a, b) => a - b));
@@ -172,18 +173,19 @@ export class BPMCalculator {
   }
 
   /**
-   * Generate peak visualization data
-   * @param data - ECG data array
+   * Generate peak visualization data for 1000 points
+   * @param data - ECG data array (1000 points)
    * @param peaks - Peak indices
-   * @returns Array for peak visualization
+   * @returns Array for peak visualization (1000 points)
    */
   generatePeakVisualization(data: number[], peaks: number[]): number[] {
     const peakData = new Array(data.length).fill(0);
 
     peaks.forEach(peakIndex => {
       const peakValue = data[peakIndex];
-      // Create peak markers (small spikes above the actual peak) - adjusted for 360Hz
-      for (let j = peakIndex - 7; j <= peakIndex + 7; j++) { // Reduced from 10 to 7 for 360Hz
+      // Create peak markers - adjusted for 360Hz and 1000 points
+      const markerWidth = Math.floor(this.sampleRate * 0.02); // 20ms marker width = ~7 samples at 360Hz
+      for (let j = peakIndex - markerWidth; j <= peakIndex + markerWidth; j++) {
         if (j >= 0 && j < data.length) {
           peakData[j] = peakValue + 0.03; // Slight offset above peak
         }
@@ -249,7 +251,7 @@ export class BPMCalculator {
 export function detectRPeaks(
   signal: number[],
   sampleRate: number,
-  threshold: number = 0.35, // Increased threshold for stability
+  threshold: number = 0.35,
   refractoryMs: number = 300
 ): number[] {
   const refractorySamples = Math.floor(refractoryMs * sampleRate / 1000); // ~108 samples at 360Hz

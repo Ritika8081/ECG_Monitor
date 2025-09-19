@@ -20,9 +20,9 @@ const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 const CONTROL_CHAR_UUID = "0000ff01-0000-1000-8000-00805f9b34fb";
 
-const NUM_POINTS = 1000; // Increased for 360Hz: 1800 points = 5 seconds at 360Hz
-const SAMPLE_RATE = 360; // Updated to match new sampling rate
-const MODEL_INPUT_LENGTH = 135; // Updated to match new model training (135 samples ≈ 375ms at 360Hz)
+const NUM_POINTS = 1000; // Updated: 1000 points ≈ 2.78 seconds at 360Hz
+const SAMPLE_RATE = 360; // 360Hz sampling rate
+const MODEL_INPUT_LENGTH = 135; // 135 samples ≈ 375ms at 360Hz
 const SINGLE_SAMPLE_LEN = 7;
 const NEW_PACKET_LEN = 7 * 10;
 const BATCH_SIZE = 20;
@@ -159,15 +159,11 @@ export default function EcgFullPanel() {
 
         const wglp = new WebglPlot(canvas);
 
-        // Create ECG line (main signal)
+        // Create ECG line (main signal) - updated for 1000 points
         const line = new WebglLine(new ColorRGBA(0, 1, 0.2, 1), NUM_POINTS);
         line.arrangeX();
 
-        // // Create peak line
-        // const peakLine = new WebglLine(new ColorRGBA(1, 0.2, 0.2, 1), NUM_POINTS);
-        // peakLine.arrangeX();
-
-        // Create PQRST lines
+        // Create PQRST lines - updated for 1000 points
         const pLine = new WebglLine(new ColorRGBA(1, 0.7, 0, 1), NUM_POINTS); // Orange for P
         pLine.arrangeX();
 
@@ -185,7 +181,6 @@ export default function EcgFullPanel() {
 
         // Add all lines to the plot
         wglp.addLine(line);
-        // wglp.addLine(peakLine);
         wglp.addLine(pLine);
         wglp.addLine(qLine);
         wglp.addLine(rLine);
@@ -195,7 +190,6 @@ export default function EcgFullPanel() {
         // Store references
         wglpRef.current = wglp;
         lineRef.current = line;
-        // peakLineRef.current = peakLine;
         pLineRef.current = pLine;
         qLineRef.current = qLine;
         rLineRef.current = rLine;
@@ -207,7 +201,6 @@ export default function EcgFullPanel() {
             const scale = getScaleFactor();
             for (let i = 0; i < NUM_POINTS; i++) {
                 line.setY(i, dataCh0.current[i] * scale);
-                // peakLine.setY(i, peaksVisible ? peakData.current[i] : 0);
 
                 // Update PQRST lines if visible
                 if (showPQRST) {
@@ -412,11 +405,26 @@ export default function EcgFullPanel() {
                 setTimer(`${min}:${sec}`);
             }
 
-            const bpm = bpmCalculator.current.computeBPM(dataCh0.current);
-            if (bpm) {
-                setBpmDisplay(Math.round(bpm) + " BPM");
-            } else {
-                setBpmDisplay("-- BPM");
+            // Fix: Use the improved peak detection
+            if (connected) {
+                // Get peaks using the most reliable method
+                const peaks = panTompkins.current.detectQRS(dataCh0.current);
+                
+                // If Pan-Tompkins fails, use backup method
+                let finalPeaks = peaks;
+                if (peaks.length === 0) {
+                    finalPeaks = bpmCalculator.current.detectPeaks(dataCh0.current);
+                }
+                
+                // Calculate BPM from peaks
+                const bpm = bpmCalculator.current.calculateBPMFromPeaks(finalPeaks);
+                
+                if (bpm && bpm >= 40 && bpm <= 200) {
+                    const smoothedBPM = bpmCalculator.current.smoothBPM(bpm);
+                    setBpmDisplay(Math.round(smoothedBPM) + " BPM");
+                } else {
+                    setBpmDisplay("-- BPM");
+                }
             }
 
             // Always try to update HRV metrics when connected
@@ -524,8 +532,19 @@ export default function EcgFullPanel() {
             return;
         }
 
-        // Get the last MODEL_INPUT_LENGTH samples for prediction
-        const ecgWindow = dataCh0.current.slice(-MODEL_INPUT_LENGTH);
+        // For 1000 points buffer, get the last MODEL_INPUT_LENGTH samples for prediction
+        let ecgWindow: number[];
+        
+        if (sampleIndex.current >= MODEL_INPUT_LENGTH) {
+            // Normal case: get the most recent samples
+            ecgWindow = dataCh0.current.slice(sampleIndex.current - MODEL_INPUT_LENGTH, sampleIndex.current);
+        } else {
+            // Wraparound case: need to get data from end of buffer and beginning
+            const fromEnd = dataCh0.current.slice(NUM_POINTS - (MODEL_INPUT_LENGTH - sampleIndex.current));
+            const fromStart = dataCh0.current.slice(0, sampleIndex.current);
+            ecgWindow = [...fromEnd, ...fromStart];
+        }
+
         if (ecgWindow.length < MODEL_INPUT_LENGTH) {
             console.log(`Not enough ECG data for prediction. Need ${MODEL_INPUT_LENGTH}, have ${ecgWindow.length}`);
             return;
@@ -1272,7 +1291,7 @@ export default function EcgFullPanel() {
 
             {/* HRV Panel */}
             {showHRV && (
-                <div className="absolute left-20 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white">
+                <div className="absolute left-20 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-50">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-bold flex items-center gap-2">
                             <TrendingUp className="w-5 h-5 text-blue-400" />
@@ -1605,7 +1624,7 @@ export default function EcgFullPanel() {
                                                                 return avgRR > 0 ? (60000 / avgRR).toFixed(1) : "--";
                                                             }
                                                             return "--";
-                                                        })()
+                                                                                                               })()
                                                 } BPM
                                             </span>
                                         </div>
@@ -1665,23 +1684,7 @@ export default function EcgFullPanel() {
                                             </div>
                                         </div>
 
-                                        {/* QTc Interval with explanation */}
-                                        <div className="p-3 rounded-lg border border-white/20 bg-black/40">
-                                            <div className="flex justify-between items-center">
-                                                <span className="text-gray-300 text-sm">QTc:</span>
-                                                <span className={`font-mono ${ecgIntervals.status.qtc === 'normal' ? 'text-green-400' :
-                                                    ecgIntervals.status.qtc === 'prolonged' ? 'text-red-400' : 'text-gray-400'
-                                                    }`}>
-                                                    {ecgIntervals.qtc.toFixed(0)} ms
-                                                </span>
-                                            </div>
-                                            <div className="text-xs text-gray-400 mt-1">
-                                                Heart-rate adjusted QT interval
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* ST Segment data - added section */}
+                                         {/* ST Segment data - added section */}
                                     {stSegmentData && (
                                         <div className="p-3 rounded-lg border border-white/20 bg-black/40">
                                             <div className="flex justify-between items-center">
@@ -1700,6 +1703,9 @@ export default function EcgFullPanel() {
                                             </div>
                                         </div>
                                     )}
+                                    </div>
+
+                                  
 
                                     {/* Abnormality indicators - full width */}
                                     {ecgIntervals.status.pr === 'long' || ecgIntervals.status.qrs === 'wide' || ecgIntervals.status.qtc === 'prolonged' ? (
@@ -1718,12 +1724,7 @@ export default function EcgFullPanel() {
                                                         <span>Wide QRS complex</span>
                                                     </li>
                                                 )}
-                                                {ecgIntervals.status.qtc === 'prolonged' && (
-                                                    <li className="flex items-center gap-1 text-yellow-400">
-                                                        <span>•</span>
-                                                        <span>Prolonged QTc interval</span>
-                                                    </li>
-                                                )}
+                                               
                                             </ul>
                                         </div>
                                     ) : (
@@ -1748,7 +1749,7 @@ export default function EcgFullPanel() {
                 </div>
             )}
 
-            {/* PQRST text labels overlay - simpler approach */}
+            {/* PQRST text labels overlay - updated for 1000 points */}
             {showPQRST && (
                 <div className="absolute inset-0 pointer-events-none">
                     {(() => {
@@ -1759,7 +1760,7 @@ export default function EcgFullPanel() {
                                 return validRPeakIndices.includes(point.index);
                             })
                             .map((point, index) => {
-                                // Show ALL points across the entire window, not just recent ones
+                                // Show ALL points across the 1000-point window
                                 const xPercent = (point.index / NUM_POINTS) * 100;
                                 const yOffset = 50 - (point.amplitude * getScaleFactor() * 50);
 
