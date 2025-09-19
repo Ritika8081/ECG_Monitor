@@ -19,7 +19,7 @@ export class PanTompkinsDetector {
   private noiseAmp: number[] = [];
   private noiseLoc: number[] = [];
   
-  constructor(sampleRate: number = 500) {
+  constructor(sampleRate: number = 360) { // Updated default from 500 to 360
     this.sampleRate = sampleRate;
   }
   
@@ -47,7 +47,7 @@ export class PanTompkinsDetector {
     const squared = this.square(differentiated);
     
     // 4. Moving window integration
-    const windowSize = Math.round(this.sampleRate * 0.15); // 150ms window
+    const windowSize = Math.round(this.sampleRate * 0.15); // 150ms window = 54 samples at 360Hz
     const integrated = this.movingWindowIntegrate(squared, windowSize);
     
     // 5. Adaptive thresholding and peak detection
@@ -57,9 +57,10 @@ export class PanTompkinsDetector {
   }
   
   private bandpassFilter(data: number[]): number[] {
-    // Simplified IIR bandpass filter coefficients (5-15Hz)
-    const a = [1, -1.52, 0.56]; // Denominator coefficients
-    const b = [0.18, 0, -0.18]; // Numerator coefficients
+    // Updated IIR bandpass filter coefficients for 360Hz sampling rate
+    // Butterworth bandpass filter (5-15Hz) designed for 360Hz
+    const a = [1, -1.5267, 0.5763]; // Denominator coefficients for 360Hz
+    const b = [0.1816, 0, -0.1816]; // Numerator coefficients for 360Hz
     
     const filtered = new Array(data.length).fill(0);
     
@@ -83,9 +84,10 @@ export class PanTompkinsDetector {
   private differentiate(data: number[]): number[] {
     const output = new Array(data.length).fill(0);
     
-    // Five-point derivative
+    // Five-point derivative (scaled for 360Hz sampling rate)
+    const scale = this.sampleRate / 360; // Scaling factor for different sampling rates
     for (let i = 2; i < data.length - 2; i++) {
-      output[i] = (2*data[i+2] + data[i+1] - data[i-1] - 2*data[i-2]) / 8;
+      output[i] = (2*data[i+2] + data[i+1] - data[i-1] - 2*data[i-2]) / (8 * scale);
     }
     
     this.prevDifferentiated = output;
@@ -119,8 +121,8 @@ export class PanTompkinsDetector {
     const rPeaks: number[] = [];
     const dataLength = integrated.length;
     
-    // Minimum distance between peaks (250ms)
-    const minDistance = Math.round(this.sampleRate * 0.3); // 300ms window
+    // Minimum distance between peaks (300ms for 360Hz = 108 samples)
+    const minDistance = Math.round(this.sampleRate * 0.3); // 300ms window = 108 samples at 360Hz
     
     // Init with reasonable threshold
     if (this.peakAmp.length === 0) {
@@ -170,9 +172,10 @@ export class PanTompkinsDetector {
     const refinedPeaks: number[] = [];
     
     for (const peakIdx of rPeaks) {
-      // Search in a small window around the detected peak
-      const searchStart = Math.max(0, peakIdx - 10);
-      const searchEnd = Math.min(originalData.length - 1, peakIdx + 10);
+      // Search in a small window around the detected peak (adjusted for 360Hz)
+      const searchWindow = Math.round(this.sampleRate * 0.028); // 28ms window ≈ 10 samples at 360Hz
+      const searchStart = Math.max(0, peakIdx - searchWindow);
+      const searchEnd = Math.min(originalData.length - 1, peakIdx + searchWindow);
       
       let maxVal = originalData[peakIdx];
       let maxIdx = peakIdx;

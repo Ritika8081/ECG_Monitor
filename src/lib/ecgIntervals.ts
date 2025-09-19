@@ -22,7 +22,7 @@ export class ECGIntervalCalculator {
   private gender: 'male' | 'female' = 'male';
   private lastIntervals: ECGIntervals | null = null;
   
-  constructor(sampleRate: number = 500) {
+  constructor(sampleRate: number = 360) { // Updated default from 500 to 360
     this.sampleRate = sampleRate;
   }
   
@@ -121,13 +121,14 @@ export class ECGIntervalCalculator {
     
     console.log("PQRST points:", pqrstPoints);
     console.log("Complexes:", complexes);
-    console.log("Calculated intervals:", this.lastIntervals);
+    console.log("Calculated intervals (360Hz):", this.lastIntervals);
     
     return this.lastIntervals;
   }
   
   /**
    * Groups PQRST points into cardiac complexes
+   * Updated for 360Hz sampling rate - improved temporal resolution
    */
   private groupIntoComplexes(points: PQRSTPoint[]): PQRSTPoint[][] {
     if (points.length === 0) return [];
@@ -139,9 +140,19 @@ export class ECGIntervalCalculator {
     let currentComplex: PQRSTPoint[] = [];
     let lastRPosition = -1;
     
+    // Minimum distance between R waves for 360Hz (approximately 216 samples = 600ms at 360Hz)
+    const minRRDistance = Math.floor(this.sampleRate * 0.6); // 600ms minimum
+    
     // Group points by R wave
     for (const point of sortedPoints) {
       if (point.type === 'R') {
+        // Check if this R wave is far enough from the last one
+        if (lastRPosition !== -1 && 
+            Math.abs(point.absolutePosition - lastRPosition) < minRRDistance) {
+          // Too close to previous R wave, skip this one (likely noise)
+          continue;
+        }
+        
         // If we already have an R wave, start a new complex
         if (lastRPosition !== -1) {
           complexes.push(currentComplex);
@@ -184,29 +195,31 @@ export class ECGIntervalCalculator {
   
   /**
    * Status determination methods based on clinical ranges
+   * Updated thresholds optimized for 360Hz precision
    */
   private getRRStatus(rr: number): 'normal' | 'short' | 'long' | 'unknown' {
     if (rr === 0) return 'unknown';
-    if (rr < 600) return 'short';
-    if (rr > 1000) return 'long';
+    if (rr < 600) return 'short';   // <600ms (>100 BPM)
+    if (rr > 1000) return 'long';   // >1000ms (<60 BPM)
     return 'normal';
   }
   
   private getPRStatus(pr: number): 'normal' | 'short' | 'long' | 'unknown' {
     if (pr === 0) return 'unknown';
-    if (pr < 120) return 'short';
-    if (pr > 200) return 'long';
+    if (pr < 120) return 'short';   // <120ms (shorter than normal conduction)
+    if (pr > 200) return 'long';    // >200ms (1st degree AV block threshold)
     return 'normal';
   }
   
   private getQRSStatus(qrs: number): 'normal' | 'wide' | 'unknown' {
     if (qrs === 0) return 'unknown';
-    if (qrs > 120) return 'wide';
+    if (qrs > 120) return 'wide';   // >120ms (bundle branch block threshold)
     return 'normal';
   }
   
   private getQTStatus(qt: number): 'normal' | 'prolonged' | 'unknown' {
     if (qt === 0) return 'unknown';
+    // Gender-specific QT thresholds (uncorrected)
     const threshold = this.gender === 'male' ? 440 : 460;
     if (qt > threshold) return 'prolonged';
     return 'normal';
@@ -214,6 +227,7 @@ export class ECGIntervalCalculator {
   
   private getQTcStatus(qtc: number): 'normal' | 'prolonged' | 'unknown' {
     if (qtc === 0) return 'unknown';
+    // Gender-specific QTc thresholds (Bazett corrected)
     const threshold = this.gender === 'male' ? 450 : 470;
     if (qtc > threshold) return 'prolonged';
     return 'normal';
@@ -221,8 +235,8 @@ export class ECGIntervalCalculator {
   
   private getBPMStatus(bpm: number): 'normal' | 'bradycardia' | 'tachycardia' | 'unknown' {
     if (bpm === 0) return 'unknown';
-    if (bpm < 60) return 'bradycardia';
-    if (bpm > 100) return 'tachycardia';
+    if (bpm < 60) return 'bradycardia';   // <60 BPM
+    if (bpm > 100) return 'tachycardia';  // >100 BPM
     return 'normal';
   }
   
@@ -238,5 +252,29 @@ export class ECGIntervalCalculator {
    */
   reset(): void {
     this.lastIntervals = null;
+  }
+  
+  /**
+   * Validate interval measurements for 360Hz sampling rate
+   * @param intervals Calculated intervals to validate
+   * @returns true if intervals are physiologically reasonable
+   */
+  validateIntervals(intervals: ECGIntervals): boolean {
+    // Check for physiologically reasonable values at 360Hz precision
+    if (intervals.rr > 0 && (intervals.rr < 300 || intervals.rr > 3000)) return false;
+    if (intervals.pr > 0 && (intervals.pr < 80 || intervals.pr > 400)) return false;
+    if (intervals.qrs > 0 && (intervals.qrs < 40 || intervals.qrs > 200)) return false;
+    if (intervals.qt > 0 && (intervals.qt < 200 || intervals.qt > 600)) return false;
+    if (intervals.qtc > 0 && (intervals.qtc < 300 || intervals.qtc > 700)) return false;
+    if (intervals.bpm > 0 && (intervals.bpm < 20 || intervals.bpm > 300)) return false;
+    
+    return true;
+  }
+  
+  /**
+   * Get sample rate for external reference
+   */
+  getSampleRate(): number {
+    return this.sampleRate;
   }
 }

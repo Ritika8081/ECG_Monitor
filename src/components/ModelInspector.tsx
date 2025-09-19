@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import { zscoreNorm, classLabels } from '../lib/modelTrainer';
 
-const INPUT_LENGTH = 187; // Match your model's input shape
+const INPUT_LENGTH = 135; // Updated to match your model's input shape
 
 function getModelPath(): string {
   if (typeof window !== "undefined") {
@@ -107,6 +107,39 @@ export default function ModelInspector() {
     if (arr.length === INPUT_LENGTH) setTestInputs(arr);
   };
 
+  // Generate random ECG-like data for testing
+  const generateRandomECG = () => {
+    const randomECG: number[] = [];
+    for (let i = 0; i < INPUT_LENGTH; i++) {
+      // Generate ECG-like pattern with some noise
+      const t = i / INPUT_LENGTH;
+      let value = 0;
+      
+      // QRS complex simulation around middle
+      if (t > 0.4 && t < 0.6) {
+        const qrsT = (t - 0.4) / 0.2; // Normalize to 0-1 for QRS region
+        if (qrsT < 0.3) {
+          value = -0.2 * Math.sin(qrsT * Math.PI / 0.3); // Q wave
+        } else if (qrsT < 0.7) {
+          value = 2.0 * Math.sin((qrsT - 0.3) * Math.PI / 0.4); // R wave
+        } else {
+          value = -0.5 * Math.sin((qrsT - 0.7) * Math.PI / 0.3); // S wave
+        }
+      } else {
+        // Baseline with small variations
+        value = 0.1 * Math.sin(t * 2 * Math.PI) + 0.05 * Math.sin(t * 8 * Math.PI);
+      }
+      
+      // Add some noise
+      value += (Math.random() - 0.5) * 0.1;
+      randomECG.push(value);
+    }
+    
+    const csvString = randomECG.join(',');
+    setTestInputText(csvString);
+    setTestInputs(randomECG);
+  };
+
   // Make prediction with the model
   const handlePredict = async () => {
     if (!model) return;
@@ -203,6 +236,7 @@ export default function ModelInspector() {
                 <p>Input Shape: [{modelInfo.inputShape.slice(1).join(', ')}]</p>
                 <p>Output Shape: [{modelInfo.outputShape.slice(1).join(', ')}]</p>
                 <p>Classes: {classLabels.join(', ')}</p>
+                <p>Beat Length: {INPUT_LENGTH} samples at 250Hz (≈0.376s)</p>
               </div>
             </div>
             <h3 className="text-white font-medium mb-2">Layers</h3>
@@ -306,6 +340,7 @@ export default function ModelInspector() {
               <h3 className="text-green-400 font-medium mb-2">Test Model</h3>
               <p className="text-sm text-white">
                 Paste {INPUT_LENGTH} comma-separated ECG values below and click &quot;Predict&quot; to test the model.
+                The model expects ECG beats of 94 samples at 250Hz (≈0.376 seconds).
               </p>
             </div>
             <textarea
@@ -324,11 +359,24 @@ export default function ModelInspector() {
                 Predict
               </button>
               <button
+                onClick={generateRandomECG}
+                className="px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg"
+              >
+                Generate ECG
+              </button>
+              <button
                 onClick={() => { setTestInputText(''); setTestInputs(Array.from({ length: INPUT_LENGTH }, () => Math.random() * 2 - 1)); setPrediction(null); }}
                 className="px-6 py-2 bg-gray-700 hover:bg-gray-800 text-white font-medium rounded-lg"
               >
                 Reset
               </button>
+            </div>
+            {/* Input validation status */}
+            <div className="mb-4 p-2 bg-black/20 border border-white/10 rounded">
+              <span className={`text-sm ${testInputs.length === INPUT_LENGTH ? 'text-green-400' : 'text-yellow-400'}`}>
+                Current input length: {testInputs.length}/{INPUT_LENGTH}
+                {testInputs.length !== INPUT_LENGTH && ' (Please provide exactly ' + INPUT_LENGTH + ' values)'}
+              </span>
             </div>
             {/* Prediction Results */}
             {prediction && (

@@ -15,52 +15,43 @@ export function mapAnnotationToAAMI(symbol: string): string | null {
   return null;
 }
 
-// Utility: Resample 1D signal from originalRate to targetRate
-function resampleSignal(signal: number[], originalRate: number, targetRate: number): number[] {
-  const duration = signal.length / originalRate;
-  const targetLength = Math.round(duration * targetRate);
-  const resampled: number[] = [];
-  for (let i = 0; i < targetLength; i++) {
-    const t = i / targetRate;
-    const origIdx = t * originalRate;
-    const idx0 = Math.floor(origIdx);
-    const idx1 = Math.min(idx0 + 1, signal.length - 1);
-    const frac = origIdx - idx0;
-    // Linear interpolation
-    resampled.push(signal[idx0] * (1 - frac) + signal[idx1] * frac);
-  }
-  return resampled;
-}
-
-// --- 2. Load ECG and annotation files, extract beats around R-peaks ---
-// Add originalRate and targetRate parameters
 export async function loadBeatLevelData(
   ecgPath: string,
   annPath: string,
-  beatLength = 187,
+  beatLength = 135, // Increased for 360Hz: 135 samples ≈ 375ms at 360Hz
   originalRate = 360,
-  targetRate = 500
+  targetRate = 360  // Keep original rate - no resampling
 ) {
+  console.log(`Loading ECG from: ${ecgPath}`);
+  console.log(`Loading annotations from: ${annPath}`);
+  console.log(`Using original sampling rate: ${originalRate}Hz (no resampling)`);
+
   // Load ECG CSV (MLII lead)
   const ecgSignal: number[] = await new Promise((resolve, reject) => {
     Papa.parse(ecgPath, {
       download: true,
       header: false,
       complete: (results) => {
+        console.log(`ECG CSV rows: ${results.data.length}`);
+        console.log(`First 5 ECG rows:`, results.data.slice(0, 5));
+        
         const signal = results.data
-          .map((row) => Number((row as [string, string])[1])) // Cast row to [string, string]
+          .map((row) => {
+            const val = Number((row as [string, string])[1]);
+            return val;
+          })
           .filter((v: number) => !isNaN(v));
+        
+        console.log(`ECG signal length after filtering: ${signal.length}`);
+        console.log(`First 10 ECG values:`, signal.slice(0, 10));
         resolve(signal);
       },
-      error: reject
+      error: (err) => {
+        console.error(`ECG parse error:`, err);
+        reject(err);
+      }
     });
   });
-
-  // Resample ECG signal if needed
-  let resampledECG = ecgSignal;
-  if (originalRate !== targetRate) {
-    resampledECG = resampleSignal(ecgSignal, originalRate, targetRate);
-  }
 
   // Load annotation CSV (index, annotation_symbol)
   const annotations: { index: number, annotation_symbol: string }[] = await new Promise((resolve, reject) => {
@@ -68,51 +59,109 @@ export async function loadBeatLevelData(
       download: true,
       header: true,
       complete: (results) => {
+        console.log(`Annotation CSV rows: ${results.data.length}`);
+        console.log(`First 5 annotation rows:`, results.data.slice(0, 5));
+        
         const anns = results.data
           .map((row) => {
             const r = row as { index: string; annotation_symbol: string };
+            const idx = Number(r.index);
             return {
-              index: Number(r.index),
+              index: idx,
               annotation_symbol: r.annotation_symbol
             };
           })
-          .filter((ann: { index: number; annotation_symbol: string }) => !isNaN(ann.index));
+          .filter((ann: { index: number; annotation_symbol: string }) => {
+            const valid = !isNaN(ann.index) && ann.annotation_symbol;
+            if (!valid) {
+              console.log('Filtered out invalid annotation:', ann);
+            }
+            return valid;
+          });
+        
+        console.log(`Annotations length after filtering: ${anns.length}`);
+        console.log(`First 10 annotations:`, anns.slice(0, 10));
         resolve(anns);
       },
-      error: reject
+      error: (err) => {
+        console.error(`Annotation parse error:`, err);
+        reject(err);
+      }
     });
   });
 
-  // Adjust annotation indices for new sampling rate
-  const rateRatio = targetRate / originalRate;
-  const adjustedAnnotations = annotations.map(ann => ({
-    index: Math.round(ann.index * rateRatio),
-    annotation_symbol: ann.annotation_symbol
-  }));
+  // No resampling - use original ECG signal and annotations directly
+  const finalECG = ecgSignal;
+  const finalAnnotations = annotations.filter(ann => {
+    const valid = ann.index >= 0 && ann.index < finalECG.length;
+    if (!valid) {
+      console.log(`Filtered out annotation with invalid index: ${ann.index} (max: ${finalECG.length})`);
+    }
+    return valid;
+  });
+  
+  console.log(`Using original ECG length: ${finalECG.length}`);
+  console.log(`Final annotations length: ${finalAnnotations.length}`);
 
   // Extract beats around R-peaks
   const beats: number[][] = [];
   const labels: string[] = [];
-  const halfBeat = Math.floor(beatLength / 2);
+  const halfBeat = Math.floor(beatLength / 2); // 67 samples for 135-sample beats
+  
+  console.log(`Beat extraction - halfBeat: ${halfBeat}, beatLength: ${beatLength}`);
+  console.log(`Beat duration: ${(beatLength / originalRate * 1000).toFixed(1)}ms at ${originalRate}Hz`);
 
-  adjustedAnnotations.forEach(ann => {
+  let validBeats = 0;
+  let invalidMapping = 0;
+  let invalidBounds = 0;
+  let invalidLength = 0;
+  let invalidStd = 0;
+
+  finalAnnotations.forEach((ann, idx) => {
     const mappedClass = mapAnnotationToAAMI(ann.annotation_symbol);
-    if (!mappedClass) return;
-    const startIdx = ann.index - halfBeat;
-    const endIdx = ann.index + halfBeat + 1;
-    if (startIdx >= 0 && endIdx < resampledECG.length) {
-      const beat = resampledECG.slice(startIdx, endIdx);
-      if (beat.length === beatLength) {
-        // Z-score normalization
-        const mean = beat.reduce((a, b) => a + b, 0) / beat.length;
-        const std = Math.sqrt(beat.reduce((a, b) => a + (b - mean) ** 2, 0) / beat.length);
-        if (std > 0.001) {
-          beats.push(beat.map(x => (x - mean) / std));
-          labels.push(mappedClass);
-        }
-      }
+    if (!mappedClass) {
+      invalidMapping++;
+      if (idx < 5) console.log(`No mapping for annotation: ${ann.annotation_symbol}`);
+      return;
     }
+    
+    const startIdx = ann.index - halfBeat;
+    const endIdx = ann.index + halfBeat + (beatLength % 2); // For odd beatLength
+    
+    if (startIdx < 0 || endIdx > finalECG.length) {
+      invalidBounds++;
+      if (idx < 5) console.log(`Invalid bounds: start=${startIdx}, end=${endIdx}, signal length=${finalECG.length}`);
+      return;
+    }
+    
+    const beat = finalECG.slice(startIdx, endIdx);
+    if (beat.length !== beatLength) {
+      invalidLength++;
+      if (idx < 5) console.log(`Invalid beat length: ${beat.length}, expected: ${beatLength}`);
+      return;
+    }
+    
+    // Z-score normalization
+    const mean = beat.reduce((a, b) => a + b, 0) / beat.length;
+    const std = Math.sqrt(beat.reduce((a, b) => a + (b - mean) ** 2, 0) / beat.length);
+    if (std <= 0.001) {
+      invalidStd++;
+      if (idx < 5) console.log(`Invalid std: ${std}, beat values:`, beat.slice(0, 5));
+      return;
+    }
+    
+    beats.push(beat.map(x => (x - mean) / std));
+    labels.push(mappedClass);
+    validBeats++;
   });
+
+  console.log(`Beat extraction summary:`);
+  console.log(`- Valid beats: ${validBeats}`);
+  console.log(`- Invalid mapping: ${invalidMapping}`);
+  console.log(`- Invalid bounds: ${invalidBounds}`);
+  console.log(`- Invalid length: ${invalidLength}`);
+  console.log(`- Invalid std: ${invalidStd}`);
+  console.log(`- Total annotations processed: ${finalAnnotations.length}`);
 
   return { beats, labels };
 }
@@ -149,35 +198,76 @@ export function prepareBalancedBeatDataset(beats: number[][], labels: string[]) 
   return { beats: balancedBeats, labels: balancedLabels, classes };
 }
 
-// --- 4. Build optimized CNN model for beat-level classification ---
+// --- 4. Build optimized CNN model for beat-level classification (updated for 360Hz) ---
 export function buildBeatLevelModel(inputLength: number, numClasses: number): tf.LayersModel {
   const model = tf.sequential();
-  model.add(tf.layers.conv1d({ inputShape: [inputLength, 1], filters: 32, kernelSize: 5, activation: 'relu', padding: 'same', kernelInitializer: 'glorotNormal' }));
+  
+  // Adjusted for longer input (135 samples vs 94) and higher resolution
+  model.add(tf.layers.conv1d({ 
+    inputShape: [inputLength, 1], 
+    filters: 32, 
+    kernelSize: 7,  // Increased kernel size for 360Hz
+    activation: 'relu', 
+    padding: 'same', 
+    kernelInitializer: 'glorotNormal' 
+  }));
   model.add(tf.layers.batchNormalization());
   model.add(tf.layers.maxPooling1d({ poolSize: 2 }));
   model.add(tf.layers.dropout({ rate: 0.2 }));
 
-  model.add(tf.layers.conv1d({ filters: 64, kernelSize: 5, activation: 'relu', padding: 'same', kernelInitializer: 'glorotNormal' }));
+  model.add(tf.layers.conv1d({ 
+    filters: 64, 
+    kernelSize: 7,  // Increased kernel size
+    activation: 'relu', 
+    padding: 'same', 
+    kernelInitializer: 'glorotNormal' 
+  }));
   model.add(tf.layers.batchNormalization());
   model.add(tf.layers.maxPooling1d({ poolSize: 2 }));
   model.add(tf.layers.dropout({ rate: 0.2 }));
 
-  model.add(tf.layers.conv1d({ filters: 128, kernelSize: 3, activation: 'relu', padding: 'same', kernelInitializer: 'glorotNormal' }));
+  model.add(tf.layers.conv1d({ 
+    filters: 128, 
+    kernelSize: 5,  // Increased kernel size
+    activation: 'relu', 
+    padding: 'same', 
+    kernelInitializer: 'glorotNormal' 
+  }));
   model.add(tf.layers.batchNormalization());
   model.add(tf.layers.maxPooling1d({ poolSize: 2 }));
   model.add(tf.layers.dropout({ rate: 0.3 }));
 
-  model.add(tf.layers.conv1d({ filters: 256, kernelSize: 3, activation: 'relu', padding: 'same', kernelInitializer: 'glorotNormal' }));
+  model.add(tf.layers.conv1d({ 
+    filters: 256, 
+    kernelSize: 3, 
+    activation: 'relu', 
+    padding: 'same', 
+    kernelInitializer: 'glorotNormal' 
+  }));
   model.add(tf.layers.batchNormalization());
   model.add(tf.layers.globalAveragePooling1d());
 
-  model.add(tf.layers.dense({ units: 128, activation: 'relu', kernelRegularizer: tf.regularizers.l2({ l2: 0.01 }), kernelInitializer: 'glorotNormal' }));
+  model.add(tf.layers.dense({ 
+    units: 128, 
+    activation: 'relu', 
+    kernelRegularizer: tf.regularizers.l2({ l2: 0.01 }), 
+    kernelInitializer: 'glorotNormal' 
+  }));
   model.add(tf.layers.dropout({ rate: 0.5 }));
 
-  model.add(tf.layers.dense({ units: 64, activation: 'relu', kernelRegularizer: tf.regularizers.l2({ l2: 0.01 }), kernelInitializer: 'glorotNormal' }));
+  model.add(tf.layers.dense({ 
+    units: 64, 
+    activation: 'relu', 
+    kernelRegularizer: tf.regularizers.l2({ l2: 0.01 }), 
+    kernelInitializer: 'glorotNormal' 
+  }));
   model.add(tf.layers.dropout({ rate: 0.3 }));
 
-  model.add(tf.layers.dense({ units: numClasses, activation: 'softmax', kernelInitializer: 'glorotNormal' }));
+  model.add(tf.layers.dense({ 
+    units: numClasses, 
+    activation: 'softmax', 
+    kernelInitializer: 'glorotNormal' 
+  }));
 
   model.compile({
     optimizer: tf.train.adam(0.001),
@@ -205,7 +295,7 @@ export function zscoreNorm(arr: number[]): number[] {
 
 // --- 6. Example: Train beat-level model (call from React page) ---
 export async function trainBeatLevelECGModel(ecgPath: string, annPath: string, onEpoch?: (epoch: number, logs: tf.Logs) => void) {
-  const { beats, labels } = await loadBeatLevelData(ecgPath, annPath, 187);
+  const { beats, labels } = await loadBeatLevelData(ecgPath, annPath, 135, 360, 360); // Updated parameters
   const { beats: balancedBeats, labels: balancedLabels, classes } = prepareBalancedBeatDataset(beats, labels);
   const { X, y } = beatsToTensors(balancedBeats, balancedLabels, classes);
 
@@ -218,10 +308,10 @@ export async function trainBeatLevelECGModel(ecgPath: string, annPath: string, o
   const [xVal, xTest] = tf.split(xRest, [valSize, totalSamples - trainSize - valSize]);
   const [yVal, yTest] = tf.split(yRest, [valSize, totalSamples - trainSize - valSize]);
 
-  const model = buildBeatLevelModel(187, classes.length);
+  const model = buildBeatLevelModel(135, classes.length); // Updated input length
 
   await model.fit(xTrain, yTrain, {
-    epochs: 50,
+    epochs: 10,
     batchSize: 32,
     validationData: [xVal, yVal],
     shuffle: true,
@@ -306,25 +396,28 @@ export async function trainBeatLevelECGModelAllFiles(
   onEpoch?: (epoch: number, logs: tf.Logs) => void,
   onLog?: (msg: string) => void
 ) {
-  let allBeats: number[][] = [];
-  let allLabels: string[] = [];
-
   const log = (msg: string) => {
-    if (onLog) onLog(msg);
     console.log(msg);
-  };
-  const warn = (msg: string, err?: any) => {
-    if (onLog) onLog(`${msg} ${err ? String(err) : ""}`);
-    console.warn(msg, err);
+    if (onLog) onLog(msg);
   };
 
-  log("Loading all file pairs...");
+  const warn = (msg: string, ...args: any[]) => {
+    console.warn(msg, ...args);
+    if (onLog) onLog(`⚠️ ${msg}`);
+  };
+
+  log("Loading ECG data from all file pairs at original 360Hz sampling rate...");
+  
+  const allBeats: number[][] = [];
+  const allLabels: string[] = [];
+
   for (const pair of allFilePairs) {
     try {
-      const { beats, labels } = await loadBeatLevelData(pair.ecg, pair.ann, 187);
-      log(`Loaded ${pair.ecg}: ${beats.length} beats`);
+      log(`Loading ${pair.ecg}...`);
+      const { beats, labels } = await loadBeatLevelData(pair.ecg, pair.ann, 135, 360, 360); // Updated parameters
       allBeats.push(...beats);
       allLabels.push(...labels);
+      log(`Loaded ${beats.length} beats from ${pair.ecg}`);
     } catch (err) {
       warn(`Failed to load ${pair.ecg} or ${pair.ann}:`, err);
     }
@@ -351,11 +444,11 @@ export async function trainBeatLevelECGModelAllFiles(
   const [xVal, xTest] = tf.split(xRest, [valSize, totalSamples - trainSize - valSize]);
   const [yVal, yTest] = tf.split(yRest, [valSize, totalSamples - trainSize - valSize]);
 
-  const model = buildBeatLevelModel(187, classes.length);
+  const model = buildBeatLevelModel(135, classes.length); // Updated input length
+  log(`Model built with input shape [135, 1] and ${classes.length} output classes for 360Hz data`);
 
+  log("Starting training...");
   let bestValAcc = 0;
-
-  log("Starting model.fit...");
   await model.fit(xTrain, yTrain, {
     epochs: 10,
     batchSize: 32,
@@ -363,8 +456,8 @@ export async function trainBeatLevelECGModelAllFiles(
     shuffle: true,
     callbacks: {
       onEpochEnd: async (epoch, logs) => {
-        const trainAcc = (logs?.acc || logs?.categoricalAccuracy || 0) * 100;
-        const valAcc = (logs?.val_acc || logs?.val_categoricalAccuracy || 0) * 100;
+        const trainAcc = ((logs?.acc || logs?.categoricalAccuracy || 0) * 100);
+        const valAcc = ((logs?.val_acc || logs?.val_categoricalAccuracy || 0) * 100);
         const trainLoss = logs?.loss?.toFixed(4);
         const valLoss = logs?.val_loss?.toFixed(4);
         bestValAcc = Math.max(bestValAcc, valAcc);
@@ -377,7 +470,6 @@ export async function trainBeatLevelECGModelAllFiles(
   });
 
   log("Evaluating on test set...");
-  // Evaluate on test set
   const evalResult = await model.evaluate(xTest, yTest);
   let testAcc = 0;
   if (Array.isArray(evalResult)) {
@@ -389,10 +481,8 @@ export async function trainBeatLevelECGModelAllFiles(
   log(`Test Accuracy: ${testAcc.toFixed(2)}%`);
   log(`Best Validation Accuracy: ${bestValAcc.toFixed(2)}%`);
 
-  // Print detected classes
   log("Detected Classes: " + classes.join(", "));
 
-  // Per-class metrics
   const predictions = model.predict(xTest) as tf.Tensor;
   const predClasses = await tf.argMax(predictions, 1).data();
   const trueClasses = await tf.argMax(yTest, 1).data();

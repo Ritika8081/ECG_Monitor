@@ -11,8 +11,8 @@ export class PQRSTDetector {
     private sampleRate: number;
     private lastPointsMap: Map<string, PQRSTPoint[]> = new Map();
 
-    constructor(sampleRate: number = 500) {
-        this.windowSize = Math.floor(sampleRate * 0.2); // 200ms window
+    constructor(sampleRate: number = 360) {
+        this.windowSize = Math.floor(sampleRate * 0.2); // 200ms window = 72 samples at 360Hz
         this.sampleRate = sampleRate;
     }
 
@@ -23,16 +23,16 @@ export class PQRSTDetector {
         const validRPeaks = rPeaks.filter(peakIndex => this.isValidQRS(data, peakIndex));
 
         if (validRPeaks.length === 0) {
-          
             return [];
         }
 
-        // Only process the most recent peaks (last 5 complexes)
-        const recentPeaks = validRPeaks.slice(-5);
+        // Process ALL peaks instead of just the last 5
+        const peaksToProcess = validRPeaks;
 
         // Process each R peak to find the surrounding PQST points
-        recentPeaks.forEach((rPeakIndex, peakIdx) => {
-            if (rPeakIndex < 10 || rPeakIndex >= data.length - 10) {
+        peaksToProcess.forEach((rPeakIndex, peakIdx) => {
+            // Reduced edge check for 360Hz - only need 9 samples (25ms) on each side
+            if (rPeakIndex < 9 || rPeakIndex >= data.length - 9) {
                 return; // Skip if too close to the edges
             }
 
@@ -40,22 +40,22 @@ export class PQRSTDetector {
             let rrInterval: number;
             if (peakIdx > 0) {
                 // Use actual RR interval if available
-                rrInterval = rPeakIndex - recentPeaks[peakIdx - 1];
-            } else if (peakIdx < recentPeaks.length - 1) {
+                rrInterval = rPeakIndex - peaksToProcess[peakIdx - 1];
+            } else if (peakIdx < peaksToProcess.length - 1) {
                 // Use next RR interval if previous not available
-                rrInterval = recentPeaks[peakIdx + 1] - rPeakIndex;
+                rrInterval = peaksToProcess[peakIdx + 1] - rPeakIndex;
             } else {
-                // Fallback to default RR interval (approximately 1 second)
+                // Fallback to default RR interval (approximately 1 second at 360Hz)
                 rrInterval = this.sampleRate;
             }
 
-            // Safety check - ensure RR interval is reasonable
+            // Safety check - ensure RR interval is reasonable for 360Hz
             if (rrInterval < this.sampleRate * 0.3) {
-                // Too short - probably noise, use minimum interval (300ms)
-                rrInterval = this.sampleRate * 0.3;
+                // Too short - probably noise, use minimum interval (300ms = 108 samples)
+                rrInterval = Math.floor(this.sampleRate * 0.3);
             } else if (rrInterval > this.sampleRate * 1.5) {
-                // Too long - cap at 1.5 seconds
-                rrInterval = this.sampleRate * 1.5;
+                // Too long - cap at 1.5 seconds (540 samples)
+                rrInterval = Math.floor(this.sampleRate * 1.5);
             }
 
             // Add the R peak
@@ -67,8 +67,8 @@ export class PQRSTDetector {
             });
 
             // ---------- Q WAVE DETECTION ----------
-            // Look for Q - the minimum before R in an adaptive window (5-10% of RR interval)
-            const qWindowSize = Math.floor(rrInterval * 0.1); // 10% of RR interval
+            // Smaller, more conservative window for Q detection
+            const qWindowSize = Math.min(Math.floor(rrInterval * 0.08), 18); // Max 18 samples
             const qWindowStart = Math.max(0, rPeakIndex - qWindowSize);
             const qWindowEnd = rPeakIndex;
 
@@ -90,10 +90,10 @@ export class PQRSTDetector {
             });
 
             // ---------- P WAVE DETECTION ----------
-            // Look for P - the local maximum before Q (15-25% of RR interval before Q)
-            const pWindowSize = Math.floor(rrInterval * 0.25); // 25% of RR interval
+            // Smaller window for P wave detection
+            const pWindowSize = Math.min(Math.floor(rrInterval * 0.15), 27); // Max 27 samples
             const pWindowStart = Math.max(0, qIndex - pWindowSize);
-            const pWindowEnd = Math.max(pWindowStart, qIndex - Math.floor(rrInterval * 0.02)); // Small gap between P and Q
+            const pWindowEnd = Math.max(pWindowStart, qIndex - Math.floor(rrInterval * 0.01)); // Small gap
 
             let pIndex = pWindowStart;
             let pValue = data[pWindowStart];
@@ -113,8 +113,8 @@ export class PQRSTDetector {
             });
 
             // ---------- S WAVE DETECTION ----------
-            // Look for S - the minimum after R (5-10% of RR interval after R)
-            const sWindowSize = Math.floor(rrInterval * 0.1); // 10% of RR interval
+            // Smaller window for S wave detection
+            const sWindowSize = Math.min(Math.floor(rrInterval * 0.08), 18); // Max 18 samples
             const sWindowStart = rPeakIndex + 1;
             const sWindowEnd = Math.min(data.length - 1, rPeakIndex + sWindowSize);
 
@@ -136,9 +136,9 @@ export class PQRSTDetector {
             });
 
             // ---------- T WAVE DETECTION ----------
-            // Look for T - the local maximum after S (20-40% of RR interval after S)
-            const tWindowSize = Math.floor(rrInterval * 0.4); // 40% of RR interval
-            const tWindowStart = sIndex + Math.floor(rrInterval * 0.02); // Small gap after S
+            // Smaller window for T wave detection  
+            const tWindowSize = Math.min(Math.floor(rrInterval * 0.25), 54); // Max 54 samples
+            const tWindowStart = sIndex + Math.floor(rrInterval * 0.01); // Small gap after S
             const tWindowEnd = Math.min(data.length - 1, sIndex + tWindowSize);
 
             let tIndex = tWindowStart;
@@ -213,7 +213,6 @@ export class PQRSTDetector {
 
         // If signal is too weak, don't try to detect anything
         if (maxValue < 0.2) {
-           
             return [];
         }
 
@@ -223,13 +222,17 @@ export class PQRSTDetector {
         // Step 1: Find R peaks (high positive deflections)
         const rPeaks: number[] = [];
 
-        for (let i = 30; i < dataLength - 30; i++) {
+        // Updated window sizes for 360Hz sampling rate
+        const peakWindow = Math.floor(this.sampleRate * 0.08); // 80ms window = ~29 samples
+        const skipWindow = Math.floor(this.sampleRate * 0.15); // 150ms skip = ~54 samples
+
+        for (let i = peakWindow; i < dataLength - peakWindow; i++) {
             // Skip if not above threshold
             if (data[i] < rThreshold) continue;
 
-            // Check if this is a local maximum
+            // Check if this is a local maximum within the peak window
             let isPeak = true;
-            for (let j = Math.max(0, i - 30); j <= Math.min(dataLength - 1, i + 30); j++) {
+            for (let j = Math.max(0, i - peakWindow); j <= Math.min(dataLength - 1, i + peakWindow); j++) {
                 if (j !== i && data[j] > data[i]) {
                     isPeak = false;
                     break;
@@ -239,7 +242,7 @@ export class PQRSTDetector {
             if (isPeak) {
                 rPeaks.push(i);
                 // Skip ahead to avoid detecting the same peak multiple times
-                i += 50; // Adjust as needed for your signal
+                i += skipWindow; // Skip ~150ms ahead for 360Hz
             }
         }
 
@@ -253,10 +256,13 @@ export class PQRSTDetector {
     }
 
     private isValidQRS(data: number[], rIndex: number): boolean {
+        // Updated window sizes for 360Hz sampling rate
+        const qrsWindow = Math.floor(this.sampleRate * 0.06); // 60ms = ~22 samples at 360Hz
+        
         // Check if this point has the QRS morphology (Q dip before R, S dip after R)
         // Look for Q wave (negative deflection before R)
         let hasQWave = false;
-        for (let i = Math.max(0, rIndex - 20); i < rIndex; i++) {
+        for (let i = Math.max(0, rIndex - qrsWindow); i < rIndex; i++) {
             if (data[i] < 0) {
                 hasQWave = true;
                 break;
@@ -265,7 +271,7 @@ export class PQRSTDetector {
 
         // Look for S wave (negative deflection after R)
         let hasSWave = false;
-        for (let i = rIndex + 1; i < Math.min(data.length, rIndex + 20); i++) {
+        for (let i = rIndex + 1; i < Math.min(data.length, rIndex + qrsWindow); i++) {
             if (data[i] < 0) {
                 hasSWave = true;
                 break;

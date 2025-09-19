@@ -3,7 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Bluetooth, Eye, EyeOff, Activity, Zap, BarChart3, TrendingUp, Play, Square, Clock } from "lucide-react";
 import { WebglPlot, WebglLine, ColorRGBA } from "webgl-plot";
 import { BPMCalculator, filterQRS } from '../lib/bpmCalculator';
-import { HighPassFilter, NotchFilter, ECGFilter } from "../lib/filters";
+import { HighpassFilter, NotchFilter, LowpassFilter } from "../lib/filters";
 import { HRVCalculator } from '../lib/hrvCalculator';
 import { PQRSTDetector, PQRSTPoint } from '../lib/pqrstDetector';
 import { PanTompkinsDetector } from '../lib/panTompkinsDetector';
@@ -14,14 +14,15 @@ import { zscoreNorm } from "../lib/modelTrainer";
 import SessionRecording, { PatientInfo, RecordingSession } from './SessionRecording';
 import { SessionAnalyzer, SessionAnalysisResults } from '../lib/sessionAnalyzer';
 import SessionReport from './SessionReport';
-import { AAMI_CLASSES } from "../lib/modelTrainer"; // <-- Import your model classes
+import { AAMI_CLASSES } from "../lib/modelTrainer";
 
 const SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
 const DATA_CHAR_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 const CONTROL_CHAR_UUID = "0000ff01-0000-1000-8000-00805f9b34fb";
 
-const NUM_POINTS = 1200;
-const SAMPLE_RATE = 500;
+const NUM_POINTS = 1000; // Increased for 360Hz: 1800 points = 5 seconds at 360Hz
+const SAMPLE_RATE = 360; // Updated to match new sampling rate
+const MODEL_INPUT_LENGTH = 135; // Updated to match new model training (135 samples ≈ 375ms at 360Hz)
 const SINGLE_SAMPLE_LEN = 7;
 const NEW_PACKET_LEN = 7 * 10;
 const BATCH_SIZE = 20;
@@ -34,9 +35,9 @@ export default function EcgFullPanel() {
     const [peaksVisible, setPeaksVisible] = useState(true);
     const [timer, setTimer] = useState("00:00");
     const [showHRV, setShowHRV] = useState(false);
-    const [classLabels, setClassLabels] = useState<string[]>(AAMI_CLASSES); // <-- Use AAMI_CLASSES directly
+    const [classLabels, setClassLabels] = useState<string[]>(AAMI_CLASSES);
     const [showPQRST, setShowPQRST] = useState(false);
-    const [showIntervals, setShowIntervals] = useState(false); // Add this state
+    const [showIntervals, setShowIntervals] = useState(false);
     const [signalQuality, setSignalQuality] = useState<'good' | 'poor' | 'no-signal'>('no-signal');
 
     // Add these states to your component
@@ -113,11 +114,11 @@ export default function EcgFullPanel() {
     const dataCh0 = useRef(new Array(NUM_POINTS).fill(0));
     const peakData = useRef(new Array(NUM_POINTS).fill(0));
     const sampleIndex = useRef(0);
-    const highpass = useRef(new HighPassFilter());
-    const notch = useRef(new NotchFilter()); // or NotchFilter60 for 60Hz regions
-    const ecg = useRef(new ECGFilter());
+    const highpass = useRef(new HighpassFilter()); // Updated filter for 360Hz
+    const notch = useRef(new NotchFilter()); // Updated filter for 360Hz
+    const ecg = useRef(new LowpassFilter()); // Updated filter for 360Hz
     const bpmCalculator = useRef(new BPMCalculator(SAMPLE_RATE, 5, 40, 200));
-    const hrvCalculator = useRef(new HRVCalculator()); // Add HRV calculator
+    const hrvCalculator = useRef(new HRVCalculator());
     const pqrstDetector = useRef(new PQRSTDetector(SAMPLE_RATE));
     const pqrstPoints = useRef<PQRSTPoint[]>([]);
     const pLineRef = useRef<WebglLine | null>(null);
@@ -519,17 +520,17 @@ export default function EcgFullPanel() {
     const analyzeCurrent = async () => {
         console.log("analyzeCurrent called");
         if (!ecgModel) {
-            console.log("No model loaded")
+            console.log("No model loaded");
             return;
         }
-        const inputShape = ecgModel.inputs[0].shape;
-        const MODEL_INPUT_LENGTH = inputShape[1] || 187;
 
+        // Get the last MODEL_INPUT_LENGTH samples for prediction
         const ecgWindow = dataCh0.current.slice(-MODEL_INPUT_LENGTH);
         if (ecgWindow.length < MODEL_INPUT_LENGTH) {
-            console.log("Not enough ECG data for prediction");
+            console.log(`Not enough ECG data for prediction. Need ${MODEL_INPUT_LENGTH}, have ${ecgWindow.length}`);
             return;
         }
+
         const normWindow = zscoreNorm(ecgWindow);
         const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_INPUT_LENGTH, 1]);
         console.log("Input tensor shape:", inputTensor.shape);
@@ -557,7 +558,6 @@ export default function EcgFullPanel() {
                 return;
             }
 
-            // FIX: Define predictedClass here
             const predictedClass = classLabels[maxIndex];
             const confidence = predArray[maxIndex] * 100;
 
@@ -568,10 +568,8 @@ export default function EcgFullPanel() {
 
             setBeatPredictions(prev => {
                 const updated = [...prev, { prediction: predictedClass, confidence }];
-                // Keep only the last BATCH_SIZE predictions
                 const rolling = updated.slice(-BATCH_SIZE);
 
-                // Always set batchResult if we have at least 1 prediction
                 if (rolling.length > 0) {
                     const summary = getRollingSummary(rolling);
                     setBatchResult({
@@ -723,9 +721,11 @@ export default function EcgFullPanel() {
         // Create CSV content
         let csvContent = "data:text/csv;charset=utf-8,";
         csvContent += "ECG Monitor Summary Report\n";
-        csvContent += `Generated on,${new Date().toLocaleString()}\n\n`;
+        csvContent += `Generated on,${new Date().toLocaleString()}\n`;
+        csvContent += `Sampling Rate,${SAMPLE_RATE} Hz\n`;
+        csvContent += `Model Input Length,${MODEL_INPUT_LENGTH} samples\n\n`;
 
-        // Add patient info (gender since that's all we have)
+        // Add patient info
         csvContent += "Patient Information\n";
         csvContent += `Gender,${gender === 'male' ? 'Male' : 'Female'}\n\n`;
 
@@ -769,7 +769,6 @@ export default function EcgFullPanel() {
             }
         }
 
-        // Add findings section
         csvContent += "\nPotential Findings\n";
 
         // Add abnormalities
@@ -790,7 +789,6 @@ export default function EcgFullPanel() {
             csvContent += "No abnormalities detected\n";
         }
 
-        // Add disclaimer
         csvContent += "\nDISCLAIMER: This is not a medical device. Do not use for diagnosis or treatment decisions.\n";
         csvContent += "Analysis is based on a limited dataset and should be confirmed by a qualified healthcare professional.\n";
 
@@ -823,7 +821,6 @@ export default function EcgFullPanel() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showAIAnalysis, modelLoaded, ecgIntervals]);
 
- 
 
 
     // Initialize the session analyzer with model
@@ -1755,51 +1752,41 @@ export default function EcgFullPanel() {
             {showPQRST && (
                 <div className="absolute inset-0 pointer-events-none">
                     {(() => {
-                        // Define validRPeakIndices as all R points in visiblePQRST
                         const validRPeakIndices = visiblePQRST.filter(p => p.type === "R").map(p => p.index);
                         return visiblePQRST
                             .filter(point => {
                                 if (point.type !== "R") return true;
-                                // Only show R if its index is in validRPeakIndices
                                 return validRPeakIndices.includes(point.index);
                             })
                             .map((point, index) => {
-                                // Only show points from the most recent section of the ECG (e.g., last 20% of the screen)xz
-                                // This ensures we only label the newest data coming in from the left
-                                const isRecent = point.index > (sampleIndex.current - NUM_POINTS * 0.2 + NUM_POINTS) % NUM_POINTS &&
-                                    point.index < (sampleIndex.current + NUM_POINTS * 0.1) % NUM_POINTS;
+                                // Show ALL points across the entire window, not just recent ones
+                                const xPercent = (point.index / NUM_POINTS) * 100;
+                                const yOffset = 50 - (point.amplitude * getScaleFactor() * 50);
 
-                                if (isRecent) {
-                                    const xPercent = (point.index / NUM_POINTS) * 100;
-                                    const yOffset = 50 - (point.amplitude * getScaleFactor() * 50);
-
-                                    let color;
-                                    switch (point.type) {
-                                        case 'P': color = 'text-orange-400'; break;
-                                        case 'Q': color = 'text-blue-400'; break;
-                                        case 'R': color = 'text-red-500'; break;
-                                        case 'S': color = 'text-cyan-400'; break;
-                                        case 'T': color = 'text-purple-400'; break;
-                                        default: color = 'text-white';
-                                            break;
-                                    }
-
-                                    return (
-                                        <div
-                                            key={`pqrst-${index}`}
-                                            className={`absolute font-bold ${color}`}
-                                            style={{
-                                                left: `${xPercent}%`,
-                                                top: `${yOffset}%`,
-                                                transform: 'translate(-50%, -50%)',
-                                                textShadow: '0 0 4px rgba(0,0,0,0.8)'
-                                            }}
-                                        >
-                                            {point.type}
-                                        </div>
-                                    );
+                                let color;
+                                switch (point.type) {
+                                    case 'P': color = 'text-orange-400'; break;
+                                    case 'Q': color = 'text-blue-400'; break;
+                                    case 'R': color = 'text-red-500'; break;
+                                    case 'S': color = 'text-cyan-400'; break;
+                                    case 'T': color = 'text-purple-400'; break;
+                                    default: color = 'text-white'; break;
                                 }
-                                return null;
+
+                                return (
+                                    <div
+                                        key={`pqrst-${index}`}
+                                        className={`absolute font-bold ${color}`}
+                                        style={{
+                                            left: `${xPercent}%`,
+                                            top: `${yOffset}%`,
+                                            transform: 'translate(-50%, -50%)',
+                                            textShadow: '0 0 4px rgba(0,0,0,0.8)'
+                                        }}
+                                    >
+                                        {point.type}
+                                    </div>
+                                );
                             });
                     })()}
                 </div>

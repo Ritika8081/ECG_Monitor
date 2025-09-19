@@ -11,7 +11,7 @@ export class BPMCalculator {
   private minDistance: number;
 
   constructor(
-    sampleRate: number = 500,
+    sampleRate: number = 360, // Updated default from 500 to 360
     windowSize: number = 5,
     minBPM: number = 40,
     maxBPM: number = 200
@@ -20,8 +20,8 @@ export class BPMCalculator {
     this.windowSize = windowSize;
     this.minBPM = minBPM;
     this.maxBPM = maxBPM;
-    this.refractoryPeriod = Math.floor(sampleRate * 0.2); // 200ms refractory period
-    this.minDistance = Math.floor(sampleRate * 0.08); // 80ms minimum distance between peaks
+    this.refractoryPeriod = Math.floor(sampleRate * 0.2); // 200ms refractory period = 72 samples at 360Hz
+    this.minDistance = Math.floor(sampleRate * 0.08); // 80ms minimum distance = 29 samples at 360Hz
   }
 
   /**
@@ -182,8 +182,8 @@ export class BPMCalculator {
 
     peaks.forEach(peakIndex => {
       const peakValue = data[peakIndex];
-      // Create peak markers (small spikes above the actual peak)
-      for (let j = peakIndex - 10; j <= peakIndex + 10; j++) {
+      // Create peak markers (small spikes above the actual peak) - adjusted for 360Hz
+      for (let j = peakIndex - 7; j <= peakIndex + 7; j++) { // Reduced from 10 to 7 for 360Hz
         if (j >= 0 && j < data.length) {
           peakData[j] = peakValue + 0.03; // Slight offset above peak
         }
@@ -226,7 +226,7 @@ export class BPMCalculator {
    * QRS-specific filtering: amplitude and slope
    */
   public filterQRS(signal: number[], peakIdx: number, sampleRate: number): boolean {
-    const window = Math.floor(0.04 * sampleRate); // 40 ms before/after (narrower window)
+    const window = Math.floor(0.04 * sampleRate); // 40ms before/after = ~14 samples at 360Hz
     const start = Math.max(peakIdx - window, 0);
     const end = Math.min(peakIdx + window, signal.length - 1);
     const segment = signal.slice(start, end);
@@ -238,8 +238,8 @@ export class BPMCalculator {
     }
     const qrsWidth = end - start;
 
-    // Stricter criteria
-    return amplitude > 0.6 && maxSlope > 0.4 && qrsWidth < Math.floor(0.12 * sampleRate);
+    // Stricter criteria (adjusted for 360Hz)
+    return amplitude > 0.6 && maxSlope > 0.4 && qrsWidth < Math.floor(0.12 * sampleRate); // 120ms = ~43 samples at 360Hz
   }
 }
 
@@ -252,7 +252,7 @@ export function detectRPeaks(
   threshold: number = 0.35, // Increased threshold for stability
   refractoryMs: number = 300
 ): number[] {
-  const refractorySamples = Math.floor(refractoryMs * sampleRate / 1000);
+  const refractorySamples = Math.floor(refractoryMs * sampleRate / 1000); // ~108 samples at 360Hz
   const peaks: number[] = [];
   let lastPeak = -refractorySamples;
 
@@ -274,7 +274,7 @@ export function detectRPeaks(
  * QRS-specific filtering: amplitude and slope
  */
 export function filterQRS(signal: number[], peakIdx: number, sampleRate: number): boolean {
-  const window = Math.floor(0.04 * sampleRate); // 40 ms before/after (narrower window)
+  const window = Math.floor(0.04 * sampleRate); // 40ms before/after = ~14 samples at 360Hz
   const start = Math.max(peakIdx - window, 0);
   const end = Math.min(peakIdx + window, signal.length - 1);
   const segment = signal.slice(start, end);
@@ -286,8 +286,8 @@ export function filterQRS(signal: number[], peakIdx: number, sampleRate: number)
   }
   const qrsWidth = end - start;
 
-  // Stricter criteria
-  return amplitude > 0.6 && maxSlope > 0.4 && qrsWidth < Math.floor(0.12 * sampleRate);
+  // Stricter criteria (adjusted for 360Hz)
+  return amplitude > 0.6 && maxSlope > 0.4 && qrsWidth < Math.floor(0.12 * sampleRate); // 120ms = ~43 samples at 360Hz
 }
 
 /**

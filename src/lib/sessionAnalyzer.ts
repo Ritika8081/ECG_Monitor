@@ -3,6 +3,7 @@ import { HRVCalculator } from './hrvCalculator';
 import { PQRSTDetector } from './pqrstDetector';
 import { PanTompkinsDetector } from './panTompkinsDetector';
 import { RecordingSession, PatientInfo } from '../components/SessionRecording';
+import { AAMI_CLASSES, zscoreNorm } from './modelTrainer';
 import * as tf from '@tensorflow/tfjs';
 
 export type SessionAnalysisResults = {
@@ -69,6 +70,13 @@ export type SessionAnalysisResults = {
         prediction: string;
         confidence: number;
         explanation: string;
+        beatClassifications?: {
+            normal: number;
+            supraventricular: number;
+            ventricular: number;
+            fusion: number;
+            other: number;
+        };
     };
     abnormalities: {
         type: string;
@@ -84,15 +92,17 @@ export class SessionAnalyzer {
     private intervalCalculator: ECGIntervalCalculator;
     private hrvCalculator: HRVCalculator;
     private model: tf.LayersModel | null = null;
+    private sampleRate: number;
 
     constructor(sampleRate: number) {
+        this.sampleRate = sampleRate;
         this.panTompkins = new PanTompkinsDetector(sampleRate);
         this.pqrstDetector = new PQRSTDetector(sampleRate);
         this.intervalCalculator = new ECGIntervalCalculator(sampleRate);
         this.hrvCalculator = new HRVCalculator();
     }
 
-    async loadModel() {
+    async loadModel(): Promise<boolean> {
         try {
             const modelSources = [
                 'localstorage://beat-level-ecg-model',
@@ -111,17 +121,17 @@ export class SessionAnalyzer {
                         }
                     }
                     this.model = await tf.loadLayersModel(modelUrl);
-                    console.log(`Model loaded successfully from: ${modelUrl}`);
+                    console.log(`Beat-level ECG model loaded successfully from: ${modelUrl}`);
                     return true;
                 } catch (err) {
                     console.log(`Failed to load model from ${modelUrl}:`, err);
                     continue;
                 }
             }
-            console.warn('No model could be loaded from any source');
+            console.warn('No beat-level ECG model could be loaded from any source');
             return false;
         } catch (err) {
-            console.error('Failed to load model:', err);
+            console.error('Failed to load beat-level ECG model:', err);
             this.model = null;
             return false;
         }
@@ -193,8 +203,10 @@ export class SessionAnalyzer {
         // 5. Analyze ST segment
         const stSegmentData = this.analyzeSTSegment(pqrstPoints);
 
-        // 6. Run AI classification
-        const aiClassification = await this.runAIClassification(
+        // 6. Run AI classification using beat-level model
+        const aiClassification = await this.runBeatLevelClassification(
+            ecgData,
+            peaks,
             intervals,
             stSegmentData,
             hrvMetrics,
@@ -223,8 +235,8 @@ export class SessionAnalyzer {
         return {
             summary: {
                 recordingDuration: this.formatDuration(duration),
-                recordingDurationSeconds: duration, // <-- Add this
-                rPeaks: peaks,                     // <-- Add this
+                recordingDurationSeconds: duration,
+                rPeaks: peaks,
                 heartRate: {
                     average: heartRates.average,
                     min: heartRates.min,
@@ -284,115 +296,251 @@ export class SessionAnalyzer {
     }
 
     private analyzeSTSegment(pqrstPoints: any[]): { deviation: number; status: string } | null {
-        // Implementation similar to your existing analyzeSTSegment method
-        // ...
-        return null; // Replace with actual implementation
+        // Basic ST segment analysis
+        if (!pqrstPoints || pqrstPoints.length === 0) {
+            return null;
+        }
+
+        // Simplified ST analysis - in a real implementation, this would be more sophisticated
+        const stDeviations: number[] = [];
+        
+        pqrstPoints.forEach(point => {
+            if (point.S && point.T) {
+                // Calculate ST segment deviation (simplified)
+                const stDeviation = point.T.amplitude - point.S.amplitude;
+                stDeviations.push(stDeviation);
+            }
+        });
+
+        if (stDeviations.length === 0) {
+            return { deviation: 0, status: 'unknown' };
+        }
+
+        const avgDeviation = stDeviations.reduce((sum, dev) => sum + dev, 0) / stDeviations.length;
+        
+        let status = 'normal';
+        if (avgDeviation > 0.1) {
+            status = 'elevation';
+        } else if (avgDeviation < -0.1) {
+            status = 'depression';
+        }
+
+        return {
+            deviation: avgDeviation,
+            status: status
+        };
     }
 
-    private async runAIClassification(
+    private async runBeatLevelClassification(
+        ecgData: number[],
+        peaks: number[],
         intervals: any,
         stSegmentData: any,
         hrvMetrics: any,
         patientInfo: PatientInfo
-    ): Promise<{ prediction: string; confidence: number; explanation: string }> {
-        if (!this.model || !intervals) {
+    ): Promise<{ 
+        prediction: string; 
+        confidence: number; 
+        explanation: string;
+        beatClassifications?: {
+            normal: number;
+            supraventricular: number;
+            ventricular: number;
+            fusion: number;
+            other: number;
+        };
+    }> {
+        if (!this.model || !peaks || peaks.length === 0) {
             return {
                 prediction: "Analysis Failed",
                 confidence: 0,
-                explanation: "Could not run AI analysis due to missing model or data."
+                explanation: "Could not run AI analysis due to missing model or insufficient data."
             };
         }
 
         try {
-            let features = [
-                intervals.rr,
-                intervals.bpm,
-                intervals.pr,
-                intervals.qrs,
-                intervals.qt,
-                intervals.qtc,
-                stSegmentData?.deviation || 0,
-                hrvMetrics?.rmssd || 0,
-                hrvMetrics?.sdnn || 0,
-                hrvMetrics?.lfhf?.ratio || 0,
-                patientInfo.age / 100,
-                patientInfo.gender === 'male' ? 1 : 0,
-                patientInfo.weight / 100,
-                patientInfo.height / 200,
-            ];
+            // Updated to match modelTrainer.ts: 135 samples for 360Hz
+            const beatLength = 135; // Updated from 94 to 135
+            const halfBeat = Math.floor(beatLength / 2); // 67 samples
+            const beatClassifications = {
+                normal: 0,
+                supraventricular: 0,
+                ventricular: 0,
+                fusion: 0,
+                other: 0
+            };
 
-            // Always pad or slice to 187 elements
-            if (features.length < 187) {
-                features = features.concat(Array(187 - features.length).fill(0));
-            } else if (features.length > 187) {
-                features = features.slice(0, 187);
+            let totalBeats = 0;
+            let validPredictions = 0;
+
+            console.log(`Beat extraction - halfBeat: ${halfBeat}, beatLength: ${beatLength}`);
+            console.log(`Beat duration: ${(beatLength / this.sampleRate * 1000).toFixed(1)}ms at ${this.sampleRate}Hz`);
+
+            // Analyze individual beats around R-peaks
+            for (const peak of peaks) {
+                const startIdx = peak - halfBeat;
+                const endIdx = peak + halfBeat + (beatLength % 2); // For odd beatLength
+
+                // Check bounds
+                if (startIdx < 0 || endIdx >= ecgData.length) {
+                    continue;
+                }
+
+                const beat = ecgData.slice(startIdx, endIdx);
+                if (beat.length !== beatLength) {
+                    continue;
+                }
+
+                // Z-score normalization (matching modelTrainer.ts approach)
+                const mean = beat.reduce((a, b) => a + b, 0) / beat.length;
+                const std = Math.sqrt(beat.reduce((a, b) => a + (b - mean) ** 2, 0) / beat.length);
+                
+                if (std <= 0.001) {
+                    console.log(`Invalid std: ${std}, skipping beat`);
+                    continue;
+                }
+
+                const normalizedBeat = beat.map(x => (x - mean) / std);
+                
+                // Create input tensor for the model - shape [1, 135, 1]
+                const inputTensor = tf.tensor3d([normalizedBeat.map(v => [v])], [1, beatLength, 1]);
+                
+                try {
+                    const outputTensor = this.model.predict(inputTensor) as tf.Tensor;
+                    const probabilities = await outputTensor.data();
+                    
+                    const predArray = Array.from(probabilities);
+                    const maxIndex = predArray.indexOf(Math.max(...predArray));
+                    const confidence = predArray[maxIndex];
+                    
+                    if (maxIndex >= 0 && maxIndex < AAMI_CLASSES.length && confidence > 0.5) {
+                        const predictedClass = AAMI_CLASSES[maxIndex].toLowerCase();
+                        
+                        // Count beat classifications
+                        switch (predictedClass) {
+                            case 'normal':
+                                beatClassifications.normal++;
+                                break;
+                            case 'supraventricular':
+                                beatClassifications.supraventricular++;
+                                break;
+                            case 'ventricular':
+                                beatClassifications.ventricular++;
+                                break;
+                            case 'fusion':
+                                beatClassifications.fusion++;
+                                break;
+                            case 'other':
+                                beatClassifications.other++;
+                                break;
+                        }
+                        validPredictions++;
+                    }
+                    
+                    outputTensor.dispose();
+                } catch (err) {
+                    console.warn('Failed to predict beat:', err);
+                }
+                
+                inputTensor.dispose();
+                totalBeats++;
             }
 
-            const inputTensor = tf.tensor3d([features.map(v => [v])], [1, 187, 1]);
-            const outputTensor = this.model.predict(inputTensor) as tf.Tensor;
-            const probabilities = await outputTensor.data();
+            console.log(`Beat classification summary:`);
+            console.log(`- Total beats analyzed: ${totalBeats}`);
+            console.log(`- Valid predictions: ${validPredictions}`);
+            console.log(`- Beat classifications:`, beatClassifications);
 
-            const predArray = Array.from(probabilities);
-            const maxIndex = predArray.indexOf(Math.max(...predArray));
-            let predictedClass = this.getClassLabel(maxIndex);
-            const confidence = predArray[maxIndex] * 100;
+            // Determine overall rhythm classification based on beat analysis
+            let overallPrediction = "Normal Sinus Rhythm";
+            let overallConfidence = 0;
 
-            if (
-                predictedClass === "Atrial Fibrillation" &&
-                (hrvMetrics?.percentIrregular !== undefined && hrvMetrics?.irregularBeats !== undefined &&
-                    hrvMetrics.percentIrregular <= 20 && hrvMetrics.irregularBeats <= 3)
-            ) {
-                predictedClass = "Normal Sinus Rhythm";
+            if (validPredictions > 0) {
+                const totalValidBeats = Object.values(beatClassifications).reduce((sum, count) => sum + count, 0);
+                
+                // Calculate percentages
+                const normalPercent = (beatClassifications.normal / totalValidBeats) * 100;
+                const ventricularPercent = (beatClassifications.ventricular / totalValidBeats) * 100;
+                const supraventricularPercent = (beatClassifications.supraventricular / totalValidBeats) * 100;
+                const fusionPercent = (beatClassifications.fusion / totalValidBeats) * 100;
+                const otherPercent = (beatClassifications.other / totalValidBeats) * 100;
+
+                // Determine overall classification (matching modelTrainer.ts logic)
+                if (normalPercent >= 80) {
+                    overallPrediction = "Normal Sinus Rhythm";
+                    overallConfidence = normalPercent;
+                } else if (ventricularPercent > 10) {
+                    overallPrediction = "Ventricular Arrhythmia";
+                    overallConfidence = ventricularPercent;
+                } else if (supraventricularPercent > 10) {
+                    overallPrediction = "Supraventricular Arrhythmia";
+                    overallConfidence = supraventricularPercent;
+                } else if (fusionPercent > 5) {
+                    overallPrediction = "Fusion Beats Detected";
+                    overallConfidence = fusionPercent;
+                } else if (otherPercent > 15) {
+                    overallPrediction = "Abnormal Rhythm";
+                    overallConfidence = otherPercent;
+                } else {
+                    // Mixed rhythm
+                    overallPrediction = "Mixed Rhythm Pattern";
+                    overallConfidence = Math.max(normalPercent, ventricularPercent, supraventricularPercent);
+                }
+
+                // Additional checks based on HRV and intervals
+                if (intervals && intervals.status.bpm === 'bradycardia') {
+                    overallPrediction = "Bradycardia";
+                } else if (intervals && intervals.status.bpm === 'tachycardia') {
+                    overallPrediction = "Tachycardia";
+                }
             }
-
-            inputTensor.dispose();
-            outputTensor.dispose();
 
             return {
-                prediction: predictedClass,
-                confidence,
-                explanation: this.getExplanationForClass(predictedClass)
+                prediction: overallPrediction,
+                confidence: overallConfidence,
+                explanation: this.getExplanationForClassification(overallPrediction, beatClassifications),
+                beatClassifications: beatClassifications
             };
+
         } catch (err) {
-            console.error('AI classification failed:', err);
+            console.error('Beat-level classification failed:', err);
             return {
                 prediction: "Error",
                 confidence: 0,
-                explanation: "An error occurred during analysis."
+                explanation: "An error occurred during beat-level analysis."
             };
         }
     }
 
-    private getClassLabel(index: number): string {
-        const labels = [
-            "Normal Sinus Rhythm",
-            "Atrial Fibrillation",
-            "First-degree AV Block",
-            "Left Bundle Branch Block",
-            "Right Bundle Branch Block",
-            "Premature Atrial Contraction",
-            "Premature Ventricular Contraction",
-            "ST Elevation",
-            "ST Depression"
-        ];
-        return labels[index] || "Unknown";
-    }
+    private getExplanationForClassification(
+        prediction: string, 
+        beatClassifications: {
+            normal: number;
+            supraventricular: number;
+            ventricular: number;
+            fusion: number;
+            other: number;
+        }
+    ): string {
+        const total = Object.values(beatClassifications).reduce((sum, count) => sum + count, 0);
+        
+        if (total === 0) {
+            return "Insufficient data for reliable analysis.";
+        }
 
-    private getExplanationForClass(className: string): string {
         const explanations: { [key: string]: string } = {
-            "Normal Sinus Rhythm": "Your heart's electrical activity appears normal with regular rhythm.",
-            "Atrial Fibrillation": "Irregular heart rhythm potentially indicating atrial fibrillation.",
-            "First-degree AV Block": "Delayed electrical conduction between the atria and ventricles.",
-            "Left Bundle Branch Block": "Delayed activation of the left ventricle.",
-            "Right Bundle Branch Block": "Delayed activation of the right ventricle.",
-            "Premature Atrial Contraction": "Early beats originating in the atria.",
-            "Premature Ventricular Contraction": "Early beats originating in the ventricles.",
-            "ST Elevation": "Elevation of the ST segment potentially indicating myocardial injury.",
-            "ST Depression": "Depression of the ST segment potentially indicating ischemia."
+            "Normal Sinus Rhythm": `Analysis shows predominantly normal beats (${((beatClassifications.normal / total) * 100).toFixed(1)}% of ${total} analyzed beats).`,
+            "Ventricular Arrhythmia": `Detected ${beatClassifications.ventricular} ventricular beats out of ${total} analyzed beats (${((beatClassifications.ventricular / total) * 100).toFixed(1)}%).`,
+            "Supraventricular Arrhythmia": `Detected ${beatClassifications.supraventricular} supraventricular beats out of ${total} analyzed beats (${((beatClassifications.supraventricular / total) * 100).toFixed(1)}%).`,
+            "Fusion Beats Detected": `Found ${beatClassifications.fusion} fusion beats out of ${total} analyzed beats, indicating mixed conduction patterns.`,
+            "Abnormal Rhythm": `Analysis detected irregular patterns in ${beatClassifications.other} out of ${total} beats.`,
+            "Mixed Rhythm Pattern": `Complex rhythm with multiple beat types: Normal (${beatClassifications.normal}), Ventricular (${beatClassifications.ventricular}), Supraventricular (${beatClassifications.supraventricular}).`,
+            "Bradycardia": "Slow heart rate detected, which may indicate an underlying conduction issue.",
+            "Tachycardia": "Elevated heart rate detected, which could be due to various factors."
         };
 
-        return explanations[className] ||
-            "The AI model has identified patterns in your ECG that require further analysis.";
+        return explanations[prediction] || 
+            `Beat analysis completed on ${total} beats using updated 360Hz model. The AI model identified patterns requiring further evaluation.`;
     }
 
     private detectAbnormalities(
@@ -421,14 +569,58 @@ export class SessionAnalyzer {
                 });
             }
 
-            if (
-                (aiClassification.prediction === "Atrial Fibrillation" || aiClassification.prediction === "AFib") &&
-                ((hrvMetrics?.percentIrregular ?? 0) > 20 || (hrvMetrics?.irregularBeats ?? 0) > 3)
-            ) {
+            if (intervals.status.pr === 'long') {
                 abnormalities.push({
-                    type: "Atrial Fibrillation",
-                    description: "Irregular heart rhythm potentially indicating atrial fibrillation.",
-                    severity: "high"
+                    type: 'Prolonged PR Interval',
+                    severity: 'medium',
+                    description: 'Delayed conduction from atria to ventricles detected.'
+                });
+            }
+
+            if (intervals.status.qrs === 'wide') {
+                abnormalities.push({
+                    type: 'Wide QRS Complex',
+                    severity: 'medium',
+                    description: 'Delayed ventricular conduction detected, possibly indicating bundle branch block.'
+                });
+            }
+
+            if (intervals.status.qtc === 'prolonged') {
+                abnormalities.push({
+                    type: 'Prolonged QTc',
+                    severity: 'high',
+                    description: 'Prolonged QTc interval increases risk of dangerous arrhythmias.'
+                });
+            }
+        }
+
+        // Check for ventricular arrhythmias based on beat classification
+        if (aiClassification.beatClassifications && aiClassification.beatClassifications.ventricular > 0) {
+            const totalBeats = (Object.values(aiClassification.beatClassifications) as number[]).reduce((sum, count) => sum + count, 0);
+            const ventricularPercent = (aiClassification.beatClassifications.ventricular / totalBeats) * 100;
+            
+            if (ventricularPercent > 10) {
+                abnormalities.push({
+                    type: 'Ventricular Arrhythmia',
+                    severity: 'high',
+                    description: `${ventricularPercent.toFixed(1)}% of beats classified as ventricular, indicating possible PVCs or VT.`
+                });
+            }
+        }
+
+        // Check ST segment
+        if (stSegmentData) {
+            if (stSegmentData.status === 'elevation') {
+                abnormalities.push({
+                    type: 'ST Elevation',
+                    severity: 'high',
+                    description: 'ST segment elevation detected, which may indicate myocardial injury.'
+                });
+            } else if (stSegmentData.status === 'depression') {
+                abnormalities.push({
+                    type: 'ST Depression',
+                    severity: 'medium',
+                    description: 'ST segment depression detected, which may indicate ischemia.'
                 });
             }
         }
@@ -437,11 +629,22 @@ export class SessionAnalyzer {
     }
 
     private generateRecommendations(
-        abnormalities: any[],
-        aiClassification: any,
+        abnormalities: { type: string; severity: 'low' | 'medium' | 'high'; description: string }[],
+        aiClassification: { 
+            prediction: string; 
+            confidence: number; 
+            explanation: string;
+            beatClassifications?: {
+                normal: number;
+                supraventricular: number;
+                ventricular: number;
+                fusion: number;
+                other: number;
+            };
+        },
         patientInfo: PatientInfo
     ): string[] {
-        const recommendations = [];
+        const recommendations: string[] = [];
 
         recommendations.push(
             "Remember that this device is not a medical diagnostic tool. Always consult with a healthcare professional."
@@ -450,6 +653,24 @@ export class SessionAnalyzer {
         if (abnormalities.length > 0 || aiClassification.prediction !== "Normal Sinus Rhythm") {
             recommendations.push(
                 "Based on the patterns detected, consider scheduling a consultation with a cardiologist."
+            );
+        }
+
+        // Specific recommendations based on beat classifications
+        if (aiClassification.beatClassifications) {
+            const total = Object.values(aiClassification.beatClassifications).reduce((sum, count) => sum + count, 0);
+            const ventricularPercent = (aiClassification.beatClassifications.ventricular / total) * 100;
+            
+            if (ventricularPercent > 10) {
+                recommendations.push(
+                    "Frequent ventricular beats detected. Avoid excessive caffeine and monitor for symptoms like palpitations."
+                );
+            }
+        }
+
+        if (abnormalities.some(abn => abn.severity === 'high')) {
+            recommendations.push(
+                "High-priority abnormalities detected. Seek immediate medical attention if experiencing symptoms."
             );
         }
 
@@ -472,10 +693,8 @@ export class SessionAnalyzer {
             rrIntervals.push(rr);
         }
 
-
         // Filter RR intervals to physiological range (300ms to 2000ms)
         const filteredRRs = rrIntervals.filter(rr => rr >= 300 && rr <= 2000);
-
 
         if (filteredRRs.length === 0) {
             console.warn("No valid RR intervals after filtering.");
@@ -506,9 +725,10 @@ export class SessionAnalyzer {
     }
 
     private calculatePercentIrregular(peaks: number[], sampleRate: number): number {
-        // Logic to calculate percentage of irregular beats
-        // ...
-        return 0; // Replace with actual implementation
+        if (!peaks || peaks.length < 3) return 0;
+        const totalIntervals = peaks.length - 1;
+        const irregularCount = this.countIrregularBeats(peaks, sampleRate);
+        return (irregularCount / totalIntervals) * 100;
     }
 
     private formatDuration(seconds: number): string {
