@@ -9,12 +9,12 @@ export default function NavBar() {
   const pathname = usePathname();
   
   return (
-    <div className="fixed top-0 left-0 right-0 bg-black backdrop-blur-md border-b border-white/10 z-50">
+    <div className="fixed top-0 left-0 right-0 bg-black backdrop-blur-md border-b border-white/10 z-70">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
           <Link href="/" className="flex items-center gap-2">
             <Activity className="w-6 h-6 text-blue-400" />
-            <span className="text-white font-bold text-lg">ECG Monitor</span>
+            <span className="text-white font-bold text-lg">Rpeak</span>
           </Link>
           
           <div className="flex items-center gap-4">

@@ -112,19 +112,19 @@ export class SessionAnalyzer {
 
             for (const modelUrl of modelSources) {
                 try {
-                    console.log(`Attempting to load model from: ${modelUrl}`);
+                  
                     if (modelUrl.startsWith('localstorage://')) {
                         const models = await tf.io.listModels();
                         if (!models[modelUrl]) {
-                            console.log(`Model not found in localStorage: ${modelUrl}`);
+                          
                             continue;
                         }
                     }
                     this.model = await tf.loadLayersModel(modelUrl);
-                    console.log(`Beat-level ECG model loaded successfully from: ${modelUrl}`);
+                   
                     return true;
                 } catch (err) {
-                    console.log(`Failed to load model from ${modelUrl}:`, err);
+                  
                     continue;
                 }
             }
@@ -373,9 +373,7 @@ export class SessionAnalyzer {
             let totalBeats = 0;
             let validPredictions = 0;
 
-            console.log(`Beat extraction - halfBeat: ${halfBeat}, beatLength: ${beatLength}`);
-            console.log(`Beat duration: ${(beatLength / this.sampleRate * 1000).toFixed(1)}ms at ${this.sampleRate}Hz`);
-
+           
             // Analyze individual beats around R-peaks
             for (const peak of peaks) {
                 const startIdx = peak - halfBeat;
@@ -396,7 +394,7 @@ export class SessionAnalyzer {
                 const std = Math.sqrt(beat.reduce((a, b) => a + (b - mean) ** 2, 0) / beat.length);
                 
                 if (std <= 0.001) {
-                    console.log(`Invalid std: ${std}, skipping beat`);
+                   
                     continue;
                 }
 
@@ -446,10 +444,7 @@ export class SessionAnalyzer {
                 totalBeats++;
             }
 
-            console.log(`Beat classification summary:`);
-            console.log(`- Total beats analyzed: ${totalBeats}`);
-            console.log(`- Valid predictions: ${validPredictions}`);
-            console.log(`- Beat classifications:`, beatClassifications);
+           
 
             // Determine overall rhythm classification based on beat analysis
             let overallPrediction = "Normal Sinus Rhythm";

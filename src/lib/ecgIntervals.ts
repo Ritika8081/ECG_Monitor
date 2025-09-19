@@ -119,9 +119,6 @@ export class ECGIntervalCalculator {
       status
     };
     
-    console.log("PQRST points:", pqrstPoints);
-    console.log("Complexes:", complexes);
-    console.log("Calculated intervals (360Hz):", this.lastIntervals);
     
     return this.lastIntervals;
   }

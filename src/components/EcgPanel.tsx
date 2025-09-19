@@ -280,25 +280,17 @@ export default function EcgFullPanel() {
         let usedPanTompkins = peaks.length > 0;
 
         if (!usedPanTompkins) {
-            console.log('Pan-Tompkins found no peaks, trying original algorithm');
+           
             const originalPeaks = bpmCalculator.current.detectPeaks(dataCh0.current);
             if (originalPeaks.length > 0) {
                 peaks.push(...originalPeaks);
             }
         }
 
-        // Log all detected R peaks
-        console.log('Detected R peaks:', peaks.length, 'Indices:', peaks);
 
         // Generate visualization (same as before)
         peakData.current = bpmCalculator.current.generatePeakVisualization(dataCh0.current, peaks);
 
-        // Log detailed peak info
-        if (peaks.length > 0) {
-            console.log('Peak detection used Pan-Tompkins:', usedPanTompkins);
-            console.log('Peak amplitudes:', peaks.map(idx => dataCh0.current[idx]));
-            console.log('Peak indices:', peaks);
-        }
 
         // Try to detect PQRST waves
         let pqrstDetected = false;
@@ -315,7 +307,7 @@ export default function EcgFullPanel() {
 
         // If standard detection failed, try direct detection
         if (!pqrstDetected) {
-            console.log('Standard detection failed, trying direct PQRST detection');
+           
             pqrstPoints.current = pqrstDetector.current.detectDirectWaves(dataCh0.current, sampleIndex.current);
 
             if (showPQRST && pqrstPoints.current.length > 0) {
@@ -325,18 +317,15 @@ export default function EcgFullPanel() {
             }
         }
 
-        // // Debug logging
-        console.log('Peaks detected:', peaks.length);
-        console.log('PQRST points detected:', pqrstPoints.current.length);
 
         // Extract RR intervals for HRV analysis
         if (peaks.length >= 2) {
-            console.log('Extracting RR intervals from', peaks.length, 'peaks');
+           
             hrvCalculator.current.extractRRFromPeaks(peaks, SAMPLE_RATE);
 
             // Force update HRV metrics
             const metrics = hrvCalculator.current.getAllMetrics();
-            console.log('HRV Metrics:', metrics);
+           
             setHrvMetrics(metrics);
         } else {
             console.log('Not enough peaks for HRV analysis');
@@ -430,7 +419,7 @@ export default function EcgFullPanel() {
             // Always try to update HRV metrics when connected
             if (connected) {
                 const metrics = hrvCalculator.current.getAllMetrics();
-                console.log('Timer HRV update:', metrics.sampleCount, 'samples');
+              
                 if (metrics.sampleCount > 0) {
                     setHrvMetrics(metrics);
                     // Update this line to use the new method name
@@ -546,33 +535,32 @@ export default function EcgFullPanel() {
         }
 
         if (ecgWindow.length < MODEL_INPUT_LENGTH) {
-            console.log(`Not enough ECG data for prediction. Need ${MODEL_INPUT_LENGTH}, have ${ecgWindow.length}`);
+          
             return;
         }
 
         const normWindow = zscoreNorm(ecgWindow);
         const inputTensor = tf.tensor3d([normWindow.map((v: number) => [v])], [1, MODEL_INPUT_LENGTH, 1]);
-        console.log("Input tensor shape:", inputTensor.shape);
+        
 
         try {
             const outputTensor = ecgModel.predict(inputTensor) as tf.Tensor;
-            console.log("Output tensor shape:", outputTensor.shape);
-
+           
             const probabilities = await outputTensor.data();
-            console.log("Probabilities array:", probabilities);
+         
 
             if (!probabilities || probabilities.length === 0) {
-                console.error("Model output is empty or invalid");
+              
                 setModelPrediction({ prediction: "Analyzing", confidence: 0 });
                 return;
             }
 
             const predArray = Array.from(probabilities);
             const maxIndex = predArray.indexOf(Math.max(...predArray));
-            console.log("Max index:", maxIndex, "Class labels:", classLabels);
+          
 
             if (maxIndex < 0 || maxIndex >= classLabels.length) {
-                console.error("Max index out of bounds for classLabels");
+            
                 setModelPrediction({ prediction: "Analyzing", confidence: 0 });
                 return;
             }
@@ -605,11 +593,6 @@ export default function EcgFullPanel() {
             console.error('Prediction failed:', err);
             setModelPrediction({ prediction: "Analyzing", confidence: 0 });
         }
-    };
-
-    const getBPMStats = () => {
-        console.log('BPM Stats:', bpmCalculator.current.getStats());
-        console.log('HRV Metrics:', hrvCalculator.current.getAllMetrics());
     };
 
     // Add this to keep PQRST labels moving with the wave
@@ -887,7 +870,7 @@ export default function EcgFullPanel() {
 
     const stopRecording = () => {
         if (!isRecording || !currentSession || !recordingStartTime) {
-            console.log("Stop recording failed: missing state", { isRecording, currentSession, recordingStartTime });
+          
             return null;
         }
 
@@ -897,12 +880,12 @@ export default function EcgFullPanel() {
         const freshRPeaks = panTompkins.current.detectQRS(recordedData);
         const freshPQRST = pqrstDetector.current.detectWaves(recordedData, freshRPeaks, 0);
 
-        console.log("Detected peaks:", freshRPeaks.length, "Detected PQRST:", freshPQRST.length);
+     
 
         const freshIntervals = intervalCalculator.current.calculateIntervals(freshPQRST);
 
         if (!freshIntervals) {
-            console.log("Interval calculation failed, not enough valid data.");
+          
         }
 
         const updatedSession: RecordingSession = {
@@ -1068,7 +1051,7 @@ export default function EcgFullPanel() {
             />
 
             {/* Improved Fixed Sidebar */}
-            <div className="fixed left-0 top-0 h-full z-30 flex items-center">
+            <div className="fixed left-0 top-0 h-full z-60 flex items-center">
                 <div
                     className="group h-full py-6 px-2 bg-black backdrop-blur border-r border-white/10 flex flex-col items-center justify-center transition-all duration-300 hover:w-[240px] w-16"
                 >
@@ -1232,28 +1215,6 @@ export default function EcgFullPanel() {
                         </div>
                     </div>
 
-                    {/* Export Report Button */}
-                    <div className="relative w-full mb-5">
-                        <div className="flex">
-                            <div className="w-16 flex justify-center">
-                                <button
-                                    onClick={!ecgIntervals ? undefined : generateSummaryReport}
-                                    className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${!ecgIntervals
-                                        ? 'bg-gray-500/20 text-gray-400 border border-gray-500/30 cursor-not-allowed'
-                                        : 'bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30'
-                                        }`}
-                                    title="Export Report"
-                                >
-                                    <BarChart3 className="w-5 h-5" />
-                                </button>
-                            </div>
-                            <div className="whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center">
-                                <span className={`text-sm font-medium ${!ecgIntervals ? 'text-gray-400' : 'text-green-400'}`}>
-                                    Export Report
-                                </span>
-                            </div>
-                        </div>
-                    </div>
 
                     {/* AI Analysis Button */}
                     <div className="relative w-full mb-5">
@@ -1291,7 +1252,7 @@ export default function EcgFullPanel() {
 
             {/* HRV Panel */}
             {showHRV && (
-                <div className="absolute left-20 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-50">
+                <div className="absolute left-20 top-1/2 transform -translate-y-1/2 w-80 bg-black/60 backdrop-blur-sm border border-white/20 rounded-xl p-4 text-white z-30">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="text-lg font-bold flex items-center gap-2">
                             <TrendingUp className="w-5 h-5 text-blue-400" />
@@ -1446,7 +1407,7 @@ export default function EcgFullPanel() {
                             <div>
                                 <div className="text-sm font-semibold mb-1">Development Phase Notice</div>
                                 <div className="text-xs text-orange-300">
-                                    The AI feature is currently in testing and development phase. Results may not be accurate or reliable. 
+                                    The AI feature is currently in testing and development phase. Results may not be accurate or reliable.
                                     We will inform you as soon as this feature is fully operational and validated.
                                 </div>
                             </div>
@@ -1542,11 +1503,11 @@ export default function EcgFullPanel() {
                             </div>
                         </div>
                     )}
-                    
+
                     {/* Enhanced disclaimer */}
-                    <div className="mt-4 text-xs text-gray-500 italic border-t border-gray-700 pt-3">
+                    <div className="mt-4 text-xs text-gray-300 italic border-t border-gray-700 pt-3">
                         <div className="mb-1">⚠️ <strong>Important:</strong> This is not a diagnostic tool.</div>
-                        <div>AI feature is experimental and under development. Results should be confirmed by medical professionals.</div>
+                        <div>Features are currently experimental and under development.</div>
                     </div>
                 </div>
             )}
@@ -1607,6 +1568,10 @@ export default function EcgFullPanel() {
                             <div className="mt-auto pt-4 text-xs text-gray-500 italic">
                                 This is not a medical device. Do not use for diagnosis or treatment decisions.
                             </div>
+                             <div className="mt-4 text-xs text-gray-300 italic border-t border-gray-700 pt-3">
+                       
+                        <div>Features are currently experimental and under development.</div>
+                    </div>
                         </div>
 
                         {/* Right column - metrics */}
@@ -1810,7 +1775,7 @@ export default function EcgFullPanel() {
 
             {/* Recording indicator - new addition */}
             {isRecording && (
-                <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-50 flex items-center px-4 py-2 rounded-full bg-red-900/80 border border-red-500/30 shadow-lg">
+                <div className="fixed top-6 left-1/2 transform -translate-x-1/2 z-80 flex items-center px-4 py-2 rounded-full bg-red-900/80 border border-red-500/30 shadow-lg">
                     <Clock className="w-5 h-5 text-red-400 mr-2" />
                     <span className="font-mono text-lg text-red-400">{recordingTime}</span>
                     <span className="ml-1 text-xs text-red-400 font-semibold animate-pulse">Recording...</span>

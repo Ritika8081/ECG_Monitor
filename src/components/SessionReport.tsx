@@ -104,7 +104,7 @@ export default function SessionReport({
     };
 
     return (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 w-full">
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-70 flex items-center justify-center p-4 w-full">
             <div className="bg-slate-900 border border-white/20 rounded-xl max-w-[90vw] w-full max-h-[90vh] overflow-y-auto">
                 {/* Report Header */}
                 <div className="sticky top-0 bg-slate-900 border-b border-white/10 p-2 flex justify-between items-center">
@@ -115,13 +115,7 @@ export default function SessionReport({
                     </h2>
 
                     <div className="flex gap-3">
-                        <button
-                            onClick={onSaveReport}
-                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-2"
-                        >
-                            <ClipboardList className="w-4 h-4" />
-                            Save Report
-                        </button>
+                       
                         <button
                             onClick={onClose}
                             className="px-4 py-2 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800"
@@ -420,7 +414,7 @@ export default function SessionReport({
                                 <div className="bg-red-900/20 border col-span-2 border-red-500/20 rounded-lg p-2 mb-3">
                                     <div className="text-sm text-red-300">
                                         ⚠️ This device is NOT a medical diagnostic tool and should NOT be used for diagnosis, treatment decisions, 
-                                        or medical emergencies. The AI analysis is based on simplified algorithms and may not detect all conditions.
+                                        or medical emergencies. The analysis is based on simplified algorithms and may not detect all conditions.
                                     </div>
                                 </div>
                           
