@@ -10,7 +10,7 @@ import {
 const predictionLabels: Record<string, string> = {
     "Normal Sinus Rhythm": "Normal Sinus Rhythm",
     "Ventricular Arrhythmia": "Ventricular Arrhythmia",
-    "Supraventricular Arrhythmia": "Supraventricular Arrhythmia", 
+    "Supraventricular Arrhythmia": "Supraventricular Arrhythmia",
     "Fusion Beats Detected": "Fusion Beats Detected",
     "Abnormal Rhythm": "Abnormal Rhythm",
     "Mixed Rhythm Pattern": "Mixed Rhythm Pattern",
@@ -36,7 +36,7 @@ const predictionExplanations: Record<string, string> = {
 // Beat classification labels for detailed breakdown
 const beatLabels: Record<string, string> = {
     "normal": "Normal beats",
-    "supraventricular": "Supraventricular beats", 
+    "supraventricular": "Supraventricular beats",
     "ventricular": "Ventricular beats",
     "fusion": "Fusion beats",
     "other": "Other/Unknown beats"
@@ -93,7 +93,7 @@ export default function SessionReport({
     const getStatusIcon = () => {
         const hasHighSeverity = analysisResults.abnormalities.some(abn => abn.severity === 'high');
         const hasMediumSeverity = analysisResults.abnormalities.some(abn => abn.severity === 'medium');
-        
+
         if (hasHighSeverity) {
             return <AlertTriangle className="w-5 h-5 text-red-400" />;
         } else if (hasMediumSeverity) {
@@ -126,7 +126,7 @@ export default function SessionReport({
                     </h2>
 
                     <div className="flex gap-3">
-                       
+
                         <button
                             onClick={onClose}
                             className="px-4 py-2 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800"
@@ -139,7 +139,7 @@ export default function SessionReport({
                 <div className="px-6 pb-4">
                     {/* Session Summary Grid */}
                     <div className="mb-6">
-                       
+
                         <div className="grid grid-cols-4 gap-4 items-stretch">
                             {/* Session Info */}
                             <div className="flex flex-col h-full">
@@ -234,7 +234,7 @@ export default function SessionReport({
                                     <Zap className="w-4 h-4 text-yellow-400" />
                                     AI Rhythm Analysis
                                 </h3>
-                                
+
                                 {/* Development Notice - Spanning full width */}
                                 <div className="mb-4 p-3 rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-400">
                                     <div className="flex items-start gap-2">
@@ -247,12 +247,12 @@ export default function SessionReport({
                                         </div>
                                     </div>
                                 </div>
-                                
+
                                 {/* Two Column Layout */}
                                 <div className="grid grid-cols-2 gap-4">
                                     {/* Left Column - Classification & Confidence */}
                                     <div className="space-y-3">
-                                       
+
 
                                         {/* Beat Classification Breakdown */}
                                         {analysisResults.aiClassification.beatClassifications && (
@@ -262,11 +262,11 @@ export default function SessionReport({
                                                     {Object.entries(analysisResults.aiClassification.beatClassifications).map(([beatType, count]) => {
                                                         const total = Object.values(analysisResults.aiClassification.beatClassifications!).reduce((sum, c) => sum + c, 0);
                                                         const percentage = total > 0 ? (count / total) * 100 : 0;
-                                                        const color = beatType === 'normal' ? '#22c55e' : 
-                                                                    beatType === 'ventricular' ? '#ef4444' :
-                                                                    beatType === 'supraventricular' ? '#f59e0b' :
+                                                        const color = beatType === 'normal' ? '#22c55e' :
+                                                            beatType === 'ventricular' ? '#ef4444' :
+                                                                beatType === 'supraventricular' ? '#f59e0b' :
                                                                     beatType === 'fusion' ? '#8b5cf6' : '#6b7280';
-                                                    
+
                                                         return (
                                                             <div key={beatType} className="flex justify-between">
                                                                 <span className="text-gray-400">{beatLabels[beatType]}:</span>
@@ -281,7 +281,7 @@ export default function SessionReport({
 
                                     {/* Right Column - Analysis Insights */}
                                     <div className="space-y-3">
-                                      
+
 
                                         {/* AI Analysis Quality Metrics */}
                                         <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
@@ -298,14 +298,14 @@ export default function SessionReport({
                                                 <div className="flex justify-between text-xs">
                                                     <span className="text-gray-400">Pattern Consistency:</span>
                                                     <span style={{ color: aiQuality.color }}>
-                                                        {analysisResults.aiClassification.confidence >= 70 ? 'High' : 
-                                                         analysisResults.aiClassification.confidence >= 50 ? 'Medium' : 'Variable'}
+                                                        {analysisResults.aiClassification.confidence >= 70 ? 'High' :
+                                                            analysisResults.aiClassification.confidence >= 50 ? 'Medium' : 'Variable'}
                                                     </span>
                                                 </div>
                                             </div>
                                         </div>
 
-                                     
+
                                     </div>
                                 </div>
                             </div>
@@ -314,21 +314,20 @@ export default function SessionReport({
 
                     {/* Heart Rate and Rhythm Section */}
                     <div className="mb-6">
-                        
+
                         <div className="grid grid-cols-4 gap-4">
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4">
                                 <div className="text-gray-400 text-sm mb-1">Average Heart Rate</div>
-                                <div className={`font-bold text-2xl ${
-                                    analysisResults.summary.heartRate.status === 'normal' ? 'text-green-400' :
-                                    analysisResults.summary.heartRate.status === 'bradycardia' ? 'text-yellow-400' :
-                                    'text-red-400'
-                                }`}>
+                                <div className={`font-bold text-2xl ${analysisResults.summary.heartRate.status === 'normal' ? 'text-green-400' :
+                                        analysisResults.summary.heartRate.status === 'bradycardia' ? 'text-yellow-400' :
+                                            'text-red-400'
+                                    }`}>
                                     {analysisResults.summary.heartRate.average.toFixed(1)} <span className="text-sm">BPM</span>
                                 </div>
                                 <div className="text-xs text-gray-500 mt-1">
                                     {analysisResults.summary.heartRate.status === 'normal' ? 'Normal Range' :
-                                     analysisResults.summary.heartRate.status === 'bradycardia' ? 'Bradycardia (Slow)' :
-                                     'Tachycardia (Fast)'}
+                                        analysisResults.summary.heartRate.status === 'bradycardia' ? 'Bradycardia (Slow)' :
+                                            'Tachycardia (Fast)'}
                                 </div>
                             </div>
 
@@ -350,8 +349,8 @@ export default function SessionReport({
                                 <div className="font-medium">
                                     <span className={
                                         analysisResults.summary.rhythm.percentIrregular < 5 ? 'text-green-400' :
-                                        analysisResults.summary.rhythm.percentIrregular < 15 ? 'text-yellow-400' :
-                                        'text-red-400'
+                                            analysisResults.summary.rhythm.percentIrregular < 15 ? 'text-yellow-400' :
+                                                'text-red-400'
                                     }>
                                         {(100 - analysisResults.summary.rhythm.percentIrregular).toFixed(1)}%
                                     </span>
@@ -378,28 +377,26 @@ export default function SessionReport({
 
                     {/* ECG Intervals Section */}
                     <div className="mb-2">
-                       
+
                         <div className="grid grid-cols-5 gap-3">
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
                                 <div className="text-gray-400 text-xs mb-1">PR Interval</div>
-                                <div className={`font-bold text-lg ${
-                                    analysisResults.intervals.pr.status === 'normal' ? 'text-green-400' :
-                                    analysisResults.intervals.pr.status === 'short' ? 'text-yellow-400' :
-                                    'text-red-400'
-                                }`}>
+                                <div className={`font-bold text-lg ${analysisResults.intervals.pr.status === 'normal' ? 'text-green-400' :
+                                        analysisResults.intervals.pr.status === 'short' ? 'text-yellow-400' :
+                                            'text-red-400'
+                                    }`}>
                                     {analysisResults.intervals.pr.average.toFixed(0)} <span className="text-xs">ms</span>
                                 </div>
                                 <div className="text-xs text-gray-500 mt-1">
                                     {analysisResults.intervals.pr.status === 'normal' ? 'Normal' :
-                                     analysisResults.intervals.pr.status === 'short' ? 'Short' : 'Prolonged'}
+                                        analysisResults.intervals.pr.status === 'short' ? 'Short' : 'Prolonged'}
                                 </div>
                             </div>
 
                             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-3">
                                 <div className="text-gray-400 text-xs mb-1">QRS Duration</div>
-                                <div className={`font-bold text-lg ${
-                                    analysisResults.intervals.qrs.status === 'normal' ? 'text-green-400' : 'text-red-400'
-                                }`}>
+                                <div className={`font-bold text-lg ${analysisResults.intervals.qrs.status === 'normal' ? 'text-green-400' : 'text-red-400'
+                                    }`}>
                                     {analysisResults.intervals.qrs.average.toFixed(0)} <span className="text-xs">ms</span>
                                 </div>
                                 <div className="text-xs text-gray-500 mt-1">
@@ -420,8 +417,8 @@ export default function SessionReport({
                             {/* Enhanced Medical Disclaimer */}
                             <div className="bg-red-900/20 border col-span-2 border-red-500/20 rounded-lg p-2 mb-3">
                                 <div className="text-sm text-red-300">
-                                    ⚠️ <strong>Medical Disclaimer:</strong> This device is NOT a medical diagnostic tool and should NOT be used for diagnosis, treatment decisions, 
-                                    or medical emergencies. The AI analysis is based on pattern recognition and may not detect all conditions. 
+                                    ⚠️ <strong>Medical Disclaimer:</strong> This device is NOT a medical diagnostic tool and should NOT be used for diagnosis, treatment decisions,
+                                    or medical emergencies. The AI analysis is based on pattern recognition and may not detect all conditions.
                                     Always consult qualified healthcare professionals for medical evaluation.
                                 </div>
                             </div>
